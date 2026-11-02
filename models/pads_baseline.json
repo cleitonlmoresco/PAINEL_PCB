@@ -1,0 +1,5 @@
+{
+  "imgsz": 512,
+  "modelo": "yolo11n.pt",
+  "epochs": 12
+}

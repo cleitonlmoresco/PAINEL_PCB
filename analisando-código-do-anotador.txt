@@ -1,0 +1,18 @@
+anotador-modular/
+├── main.py                # entry point
+├── core/
+│   ├── models.py          # Pad, Net, Componente (dataclass)
+│   ├── detector.py        # sua função detectar_pads_com_mascara_v84 isolada
+│   ├── geometry.py        # FIX zoom - classe Viewport separada
+│   └── presets.py         # PRESETS, PALETA_32, THEME
+├── storage/
+│   ├── loader.py          # FIX compatibilidade v84..v10.3 universal
+│   ├── saver.py           # salva CSV/PNG + FIX cor componentes
+│   └── session.py         # JSON sessão versionada
+├── ui/
+│   ├── theme.py           # THEME + gerar_cor_familia_infinita()
+│   ├── widgets.py         # ButtonV5, Slider, Dropdowns
+│   ├── canvas.py          # onde vai o _render (com seus FIXes)
+│   └── interactions.py    # mouse/teclado/componentes
+└── app/
+    └── app.py             # AppV11 orquestra tudo

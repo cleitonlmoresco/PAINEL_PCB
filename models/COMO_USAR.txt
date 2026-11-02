@@ -1,0 +1,14 @@
+Modelo treinado (recomendado): models/pads.onnx + pads.json
+Baseline de teste (fraco): models/pads_baseline.onnx — NÃO é carregado automaticamente
+
+Como gerar:
+  1) py -3.11 -m pip install -r requirements_treino.txt
+  2) py -3.11 tools/treinar_pads.py --dataset C:\PCB_Painel\dataset_placas --epochs 100
+     (ou use tools/Colab_Treinar_Pads.ipynb em uma GPU gratuita)
+  3) copie o best.onnx exportado para models/pads.onnx (+ pads.json com imgsz)
+
+No app: Ctrl+K -> "Detector IA (modelo ONNX)".
+O app procura automaticamente em:
+  anotador-modular/models/pads.onnx
+  PCB_Painel/models/pads.onnx
+  <projeto>/models/pads.onnx

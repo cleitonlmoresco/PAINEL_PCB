@@ -1,0 +1,57 @@
+{
+  "pads": [],
+  "measurements": {},
+  "nets": [],
+  "next_id": 1,
+  "next_net_id": 1,
+  "sliders": [
+    70,
+    140,
+    255,
+    50,
+    6,
+    250,
+    14
+  ],
+  "filter_familia_id": null,
+  "preset_key": "preset_smd",
+  "estado_placa": "desligada",
+  "img_path": "C:/PCB_Painel/PROJETOS/IAW 9GV/20261030_111829~2.jpg",
+  "componentes": [],
+  "next_comp_id": 1,
+  "comp_scroll": 0,
+  "anotacoes": [],
+  "next_anot_id": 1,
+  "usar_gpu": true,
+  "views": {
+    "frente": {
+      "img_path": "C:/PCB_Painel/PROJETOS/IAW 9GV/20261030_111829~2.jpg",
+      "pads": [],
+      "measurements": {},
+      "nets": [],
+      "componentes": [],
+      "next_id": 1,
+      "next_net_id": 1,
+      "next_comp_id": 1,
+      "anotacoes": [],
+      "next_anot_id": 1,
+      "sliders": [
+        70,
+        140,
+        255,
+        50,
+        6,
+        250,
+        14
+      ],
+      "preset_key": "preset_smd",
+      "estado_placa": "desligada",
+      "filter_familia_id": null,
+      "zoom": 1.0,
+      "pan_x": 0.0,
+      "pan_y": 0.0
+    }
+  },
+  "view_atual": "frente",
+  "versao": "v11.2-views"
+}

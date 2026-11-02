@@ -1,0 +1,5 @@
+# Dependências para treinar a IA de detecção de pads
+# py -3.11 -m pip install -r requirements_treino.txt
+ultralytics>=8.3.0
+onnx>=1.16.0
+pillow-heif>=0.18.0
