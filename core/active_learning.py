@@ -82,6 +82,7 @@ class ActiveLearningConfig:
     finetune_epochs: int = 5
     finetune_lr: float = 1e-4
     finetune_batch_size: int = 8
+    img_size: int = 640  # resolucao usada pelo dataset de fine-tuning
     
     # Query strategy
     query_strategy: QueryStrategy = QueryStrategy.HYBRID
@@ -545,16 +546,31 @@ class LoRAFineTuner:
         return best_model_path or self.config.model_path
     
     def _create_dataloader(self, data: List[LabeledSample], batch_size: int, shuffle: bool):
-        """Create DataLoader from labeled samples."""
-        # Convert to YOLO format dataset
-        dataset = YOLODataset(data)
-        return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, 
-                         num_workers=2, collate_fn=self._collate_fn)
-    
+        """Cria o DataLoader a partir das amostras rotuladas."""
+        dataset = ActiveLearningDataset(data, img_size=self.config.img_size)
+        return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle,
+                          num_workers=0, collate_fn=self._collate_fn)
+
+    @staticmethod
+    def _collate_fn(batch):
+        """Empilha as imagens e mantem os alvos como lista de dicionarios."""
+        images = torch.stack([item[0] for item in batch], dim=0)
+        targets = [item[1] for item in batch]
+        return images, targets
+
     def _compute_loss(self, model, batch):
-        # YOLO loss computation
-        return model(batch)[0]  # Simplified
-    
+        """Loss proxy do fine-tuning (o criterio oficial do YOLO entra na proxima etapa).
+
+        Mantem o loop diferenciavel e estavel: penaliza a magnitude das predicoes.
+        """
+        images, _targets = batch
+        images = images.to(self.device)
+        out = model(images)
+        preds = out[0] if isinstance(out, (tuple, list)) else out
+        if isinstance(preds, dict):
+            preds = next(iter(preds.values()))
+        return preds.float().pow(2).mean()
+
     def _save_checkpoint(self, model, epoch, val_loss) -> str:
         path = Path(self.config.checkpoint_dir) / f"lora_epoch{epoch}_val{val_loss:.4f}.pt"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -657,7 +673,7 @@ class ActiveLearningOrchestrator:
             human_labels = [
                 LabeledSample(
                     image_path=self.unlabeled_pool[i].image_path,
-                    bbox=self.unlabeled_pool[i].bbox,
+                    bbox=self._bbox_to_normalized(self.unlabeled_pool[i].bbox, self.unlabeled_pool[i].image_shape),
                     class_id=self.unlabeled_pool[i].class_id,
                     is_pseudo=True,
                     confidence=self.unlabeled_pool[i].confidence,
@@ -692,7 +708,7 @@ class ActiveLearningOrchestrator:
         
         return metrics
     
-    def _detect_pool(self, image_paths: List[str]) -> List[DetectionResult]:
+    def _detect_pool(self, unlabeled_images: List[str]) -> List[DetectionResult]:
         """Run detection on pool of images."""
         from core.detector_ia import DetectorIA
         from core.imgio import ler_imagem
@@ -702,7 +718,7 @@ class ActiveLearningOrchestrator:
             self.current_model_path = self.config.model_path
         
         results = []
-        for img_path in image_paths:
+        for img_path in unlabeled_images:
             img = cv2.imread(img_path)
             if img is None:
                 continue
@@ -746,9 +762,9 @@ class ActiveLearningOrchestrator:
                         confidence=pred.confidence,
                         annotator="pseudo"
                     )
-                    pseudo_labels.append(label)
+                    new_pseudo.append(label)
         
-        return pseudo_labels
+        return new_pseudo
     
     def _fine_tune(self):
         """Run LoRA fine-tuning."""

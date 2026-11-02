@@ -28,10 +28,13 @@ from typing import Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
-# Garante import do detector_anomalias no mesmo diretório (raiz do PCB_Painel)
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+# Procura o detector_anomalias primeiro no próprio repositório (vendorizado)
+# e, como fallback, na pasta pai (instalação antiga fora do repositório).
+_HERE = Path(__file__).resolve().parent
+_PARENT = _HERE.parent
+for _p in (_HERE, _PARENT):
+    if (_p / 'detector_anomalias.py').exists() and str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
 from detector_anomalias import (
     AlinhadorPlacas,
