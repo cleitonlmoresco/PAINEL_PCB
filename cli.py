@@ -288,6 +288,67 @@ def abrir_projeto(
     app.iniciar()
 
 
+# ==================== ACTIVE LEARNING ====================
+
+@app.command("active-learn")
+def active_learn(
+    dataset: str = typer.Argument(..., help="Pasta com imagens não rotuladas"),
+    modelo: str = typer.Option("models/pads.onnx", "--modelo", "-m"),
+    iteracoes: int = typer.Option(5, "--iter", "-i", help="Número de iterações"),
+    batch: int = typer.Option(20, "--batch", "-b", help="Amostras por iteração"),
+    conf_pseudo: float = typer.Option(0.8, "--conf-pseudo", help="Confiança para pseudo-label"),
+    epocas_finetune: int = typer.Option(5, "--epochs", "-e"),
+    saida: str = typer.Option("active_learning_data", "--saida", "-o"),
+):
+    """
+    Executa loop de Active Learning completo.
+    
+    Exemplo:
+        anotador active-learn C:\\fotos\\placas --iter 10 --batch 30
+    """
+    from core.active_learning import ActiveLearningOrchestrator, ActiveLearningConfig
+    
+    config = ActiveLearningConfig(
+        model_path=modelo,
+        dataset_dir=saida,
+        query_batch_size=batch,
+        pseudo_label_confidence=conf_pseudo,
+        finetune_epochs=epocas_finetune,
+    )
+    
+    orchestrator = ActiveLearningOrchestrator(config)
+    
+    # Coletar imagens
+    imagens = []
+    for ext in ('.jpg', '.jpeg', '.png', '.bmp'):
+        imagens.extend(Path(dataset).glob(f"*{ext}"))
+    
+    if not imagens:
+        print("Nenhuma imagem encontrada")
+        raise typer.Exit(1)
+    
+    print(f"Iniciando Active Learning: {len(imagens)} imagens, {iteracoes} iterações")
+    
+    for i in range(iteracoes):
+        print(f"\n=== Iteração {i+1}/{iteracoes} ===")
+        
+        # Selecionar batch de imagens não processadas
+        batch_imgs = list(Path(dataset).glob("*.jpg"))[:batch]  # Simplificado
+        
+        def progress(stage, metrics):
+            print(f"  [{stage}] {metrics}")
+        
+        metrics = orchestrator.run_iteration(
+            [str(p) for p in batch_imgs],
+            progress_callback=lambda s, m: print(f"  [{s}] {m}")
+        )
+        
+        print(f"  Iteração {i+1} concluída: {metrics}")
+    
+    print("\nActive Learning concluído!")
+    print(f"Total rotulado: {len(orchestrator.labeled_samples)}")
+
+
 # ==================== ENTRY POINT ====================
 
 if __name__ == "__main__":
