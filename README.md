@@ -404,3 +404,177 @@ anotador plugin-exec resumo
 ### Plugin de exemplo incluído
 O repositório vem com `plugins/resumo_placa.py` que exibe um resumo rápido de pads/famílias/componentes tanto via CLI (`anotador resumo`) quanto via botão na toolbar.
 
+---
+
+# Tutorial e Dicas
+
+## Primeiros passos (5 min)
+
+1. **Abra uma imagem de placa:**
+   ```bash
+   python main.py imagens/placa_teste.jpg
+   ```
+   Ou abra um projeto existente:
+   ```bash
+   python main.py --projeto saida_pads_placa_teste_293a4f
+   ```
+
+2. **Detecte os pads automaticamente:**
+   Pressione **`D`** (Detectar) ou clique em **Detectar** na barra. Os pads aparecem como contornos verdes.
+
+3. **Calibre a escala (opcional, mas recomendado):**
+   Pressione **`R`**, clique em dois pontos de referência na placa e informe a medida real em mm. A partir daí, todos os pads mostram tamanho real e o export KiCad/Gerber fica correto.
+
+4. **Salve o projeto:**
+   Pressione **`S`** (Salvar). A sessão fica em `sessao_v87.json` dentro da pasta do projeto.
+
+---
+
+## Detecção de pads
+
+| Método | Tecla | Quando usar |
+|--------|-------|-------------|
+| **Smart** (padrão) | `D` | Placas comuns, bom equilíbrio precisão/velocidade |
+| **Por exemplo** | Selecione um pad bom → `Exemplo` | Placas com pads de tamanho/padrão muito específico |
+| **Tiles** | `Tiles` | Placas grandes (detecta por blocos) |
+| **IA ONNX** | `IA ONNX` | Após treinar um modelo com `anotador train` |
+
+**Dicas:**
+- Ajuste sensibilidade com `Sens +` / `Sens -` se faltarem pads ou houver muitos falsos positivos.
+- Use `Tiles` se a placa ocupar quase toda a imagem.
+- Pads detectados automaticamente ficam com `manual=False`; você pode marcá-los como manual depois.
+
+---
+
+## Marcação de pinos, GND e anotações
+
+1. **Nomear pino:** Clique num pad → `I` → digite (ex: `A3`, `VCC`, `GND`).
+2. **Marcar GND:** Clique num pad → `U` (alterna GND). A marcação propaga para o pad passante do outro lado se houver vinculação.
+3. **Anotação livre:** `Y` → clique na placa → digite o texto. Útil para "verificar solda", "componente aquecido", etc.
+4. **Numerar pinos de componente:** Selecione o componente → `Numerar pinos`. O app numera a partir do pino 1 definido.
+
+---
+
+## Componentes e datasheet
+
+1. **Criar componente:** Modo `Componente` → arraste na placa ao redor dos pads do componente.
+2. **Definir pino 1:** Clique no pad do pino 1 → `Pino 1`. A pinagem é numerada a partir dele.
+3. **Reconhecer tipo:** Selecione o componente → `Reconhecer` (usa marcação/valor/forma).
+4. **Buscar datasheet:** Selecione o componente → `Datasheet`. Busca na internet e oferece para baixar o PDF (salvo em `<projeto>/datasheets/`).
+
+---
+
+## Visões múltiplas (frente ↔ verso) e pads passantes
+
+O app suporta até 3 visões por projeto: **Frente**, **Verso** e **Conector**.
+
+1. **Adicionar imagem de outra visão:** `[6] Foto da Visão` → escolha Frente/Verso/Conector.
+2. **Vincular pads passantes:** `Vincular visões` (auto) ou 2 cliques (manual). Pads do mesmo furo ficam vinculados.
+3. **Propagação:** Quando você marca GND ou nomeia um pino em um lado, propaga automaticamente para o pad vinculado do outro lado.
+4. **Alternar visões:** Teclas `3`, `4`, `5` ou `,` `.`
+
+---
+
+## Diff viewer: frente vs verso (QA de fabricação)
+
+Útil para encontrar pads ausentes, desalinhados ou oxidados entre as faces.
+
+1. Cadastre imagem em **Frente** e **Verso** (tecla `6`).
+2. Clique em **Diff frente x verso** (grupo `DIFF` na barra).
+3. Escolha **Lado a lado** ou **Sobreposto**.
+4. Clique em **Recalcular** para executar o alinhamento (ORB+RANSAC) e gerar o heatmap.
+5. Ajuste o **limiar de diferença** se necessário.
+
+O resultado mostra qual percentual da placa difere entre as faces e destaca os pads diferentes.
+
+---
+
+## Exportação para KiCad / Gerber
+
+1. Calibre a escala com a Régua `[R]` (sem escala, usa 0,1 mm/px com aviso).
+2. **KiCad:** `Exportar KiCad` → gera `.kicad_pcb` com footprints e nets (famílias).
+3. **Gerber:** `Exportar Gerber` → gera RS-274X com flashes C/R/O, salvo em `<projeto>/gerber/`.
+4. Pelo CLI:
+   ```bash
+   anotador export-kicad <projeto> -o placa.kicad_pcb --escala 0.05
+   anotador export-gerber <projeto> -o cobre.gbr --escala 0.05
+   ```
+
+---
+
+## Active Learning (IA) — loop completo
+
+Se você tem muitas placas para anotar:
+
+1. **Pré-anotar álbum:** `Pré-anotar álbum` gera um dataset YOLO com o detector smart.
+2. **Treinar modelo:** `anotador train <dataset> --epochs 100` → gera `models/pads.onnx`.
+3. **Usar IA:** `IA ONNX` na barra detecta com o modelo treinado.
+4. **Validar AL:** `Validar AL` → clique em pseudo-labels para aprovar ou rejeitar.
+5. **Pseudo-label:** `Pseudo-Label` → gera anotações automáticas de alta confiança.
+6. **Treinar LoRA:** `Treinar LoRA` → fine-tune rápido do modelo com dados validados.
+
+---
+
+## Sistema de Plugins (M1)
+
+Crie plugins em `plugins/seu_plugin.py` (herdando `core.plugin_system.PluginBase`). Eles são carregados automaticamente e podem:
+- Adicionar comandos CLI (`anotador plugin-list`, `plugin-info`, `plugin-exec`)
+- Adicionar botões na toolbar (grupo `PLUGINS`)
+- Responder a hooks: `on_app_start`, `on_view_change`, `on_pad_detectado`, `on_salvar_sessao`, `on_exportar_pcb`
+
+Exemplo pronto: `plugins/resumo_placa.py`.
+
+---
+
+## Atalhos de teclado (resumo)
+
+| Tecla | Ação |
+|-------|------|
+| `L` | Lista de projetos |
+| `O` | Abrir imagem |
+| `S` | Salvar sessão |
+| `D` | Detectar pads |
+| `R` | Régua / calibrar escala mm-por-px |
+| `3` `4` `5` | Trocar visão Frente / Verso / Conector |
+| `6` | Foto da visão |
+| `J` | Ligar/desligar GPU |
+| `T` | Mostrar/ocultar IDs dos pads |
+| `I` | Nomear pino |
+| `U` | Marcar/desmarcar GND |
+| `Y` | Anotar |
+| `Z` | Desfazer |
+| `Ctrl+Z` / `Ctrl+Y` | Desfazer / Refazer |
+| `Ctrl+K` | Paleta de comandos (busca qualquer ação) |
+| `7` | Relatório HTML |
+| `8` | Câmera |
+| `9` | Comparar com placa ouro |
+| `Esc` | Voltar ao modo navegar |
+| `X` da janela | Fechar o aplicativo |
+
+---
+
+## Dicas de produtividade
+
+- **Use `Ctrl+K`** para buscar qualquer ação rapidamente sem navegar por menus.
+- **Calibre sempre a escala** antes de exportar KiCad/Gerber; sem ela, as medidas ficam em 0,1 mm/px.
+- **Use desfazer (`Z`) liberalmente**: a propagação de GND/pino entre visões também é desfeita.
+- **Pads vinculados** (passantes) mostram um losango branco; aproveite para não anotar duas vezes o mesmo furo.
+- **Relatório HTML (`7`)**: imprima para PDF pelo navegador e leve para a bancada de produção.
+- **Não feche o EXE pelo Gerenciador de Tarefas**: use o botão `X` da janela para garantir que a sessão seja salva corretamente.
+- **Sessões são salvas automaticamente** a cada 60 s (autosave) e de forma atômica (não corrompem se houver queda de energia).
+
+---
+
+## Solução de problemas
+
+| Problema | Solução |
+|----------|---------|
+| O EXE não abre ou some silenciosamente | O console fica aberto 10 s se houver erro. Rode pelo terminal para ver a mensagem. |
+| Nenhum pad detectado | Aumente a sensibilidade (`Sens +`) ou tente `Tiles`. Verifique brilho/contraste da foto. |
+| Pads do verso não aparecem alinhados | Use `Vincular visões` ou ajuste a imagem com `Foto da Visão`. |
+| Export KiCad sem pads | Verifique se há pads detectados na visão atual e se a escala está calibrada. |
+| Tkinter indisponível | O app cai para entrada por console (digite o caminho quando solicitado). |
+| Sessão corrompida | Ela é renomeada para `.corrompida_bak` e o projeto original é preservado. |
+| GPU não detectada | O app usa OpenCL (AMD/Intel) ou fallback CPU. O botão `GPU [J]` mostra o status. |
+
+
