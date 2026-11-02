@@ -354,3 +354,53 @@ python main.py saida_pads_v2
 # imagem específica, se necessário
 python main.py --projeto <pasta> --imagem imagens/placa_teste.jpg
 ```
+
+## Sistema de Plugins (M1)
+O AnotadorPad suporta plugins externos via **entry-points** (`anotadorpad.plugins`) e via pasta local `plugins/`.
+
+### Como criar um plugin
+Crie um arquivo `plugins/seu_plugin.py` com uma classe herdeira de `core.plugin_system.PluginBase`:
+
+```python
+from core.plugin_system import PluginBase
+
+class SeuPlugin(PluginBase):
+    name = "seu_plugin"
+    version = "1.0.0"
+    description = "Faz algo útil na placa"
+
+    def get_cli_commands(self):
+        return [("meu-comando", self.cli_meu_comando, "Ajuda")]
+
+    def cli_meu_comando(self, app=None, **kwargs):
+        print("Rodando plugin!")
+
+    def get_toolbar_buttons(self):
+        return [{"label": "Meu Botão", "key": "meu_botao", "kind": "action"}]
+
+    def btn_meu_botao(self, app):
+        app._flash("Plugin executado!", cor=(0,220,120), dur=3.0)
+
+plugin = SeuPlugin()
+```
+
+O plugin é carregado automaticamente na inicialização e:
+  * Seus comandos CLI ficam disponíveis em `anotador <comando>`
+  * Seus botões aparecem na barra de opções (grupo `PLUGINS`)
+  * Pode responder a hooks: `on_app_start`, `on_view_change`, `on_pad_detectado`, `on_salvar_sessao`, `on_exportar_pcb`
+
+### Gerenciar plugins pelo CLI
+```bash
+# Lista plugins carregados
+anotador plugin-list
+
+# Detalhes de um plugin
+anotador plugin-info resumo_placa
+
+# Executa um comando de plugin
+anotador plugin-exec resumo
+```
+
+### Plugin de exemplo incluído
+O repositório vem com `plugins/resumo_placa.py` que exibe um resumo rápido de pads/famílias/componentes tanto via CLI (`anotador resumo`) quanto via botão na toolbar.
+

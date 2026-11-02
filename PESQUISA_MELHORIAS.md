@@ -251,7 +251,7 @@ Faltando:
 - [ ] Multi-class: pad/via/fiducial/mounting/test_point
 
 ### Sprint 11-12 (Semanas 21-24): Ecossistema & Entrega
-- [ ] Plugin system (entry-points)
+- [x] Plugin system (entry-points)
 - [x] CLI unificado (`anotador train|detect|export|convert`)
 - [ ] WebAssembly demo (pyodide)
 - [ ] Documentação mkdocs + i18n PT/EN

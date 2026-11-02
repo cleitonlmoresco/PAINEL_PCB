@@ -144,6 +144,7 @@ jobs:
             --hidden-import core.kicad `
             --hidden-import core.dialogs `
             --hidden-import core.diff_viewer `
+            --hidden-import core.plugin_system `
             main.py
 
       - name: Check EXE

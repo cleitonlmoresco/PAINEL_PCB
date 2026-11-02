@@ -42,6 +42,7 @@ py -3.11 -m PyInstaller `
   --hidden-import core.kicad `
   --hidden-import core.dialogs `
   --hidden-import core.diff_viewer `
+  --hidden-import core.plugin_system `
   --hidden-import tkinter `
   --hidden-import tkinter.filedialog `
   --hidden-import tkinter.messagebox `

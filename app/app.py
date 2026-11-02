@@ -47,6 +47,7 @@ from core import transform as transform_lib
 from core import kicad as kicad_lib
 from core import dialogs as dialogs_lib
 from core import diff_viewer as diff_lib
+from core import plugin_system as plugin_lib
 from core.units import parse_valor, formatar as fmt_unidade
 from core.detector import detectar_pads_com_mascara_v84, detectar_pads_tiles
 from core.imgio import ler_imagem, imwrite as imwrite_u
@@ -234,6 +235,9 @@ class AppV101:
         self.diff_side_by_side=True        # True=lado a lado | False=sobreposto
         self.diff_result=None              # cache do último cálculo
         self.diff_precisa_recalcular=True
+        # ==================== PLUGIN SYSTEM (M1) ====================
+        self.plugin_mgr = plugin_lib.create_plugin_manager(app=self)
+        self.plugin_cmds_registrados = {}
         # Anotacoes livres + marcacao de pinos/GND (estilo RastreCurve)
         self.anotacoes=[]
         self.next_anot_id=1
@@ -513,6 +517,12 @@ class AppV101:
                 ("DIFF",[("Diff frente x verso",'modo_diff','toggle'),("Lado a lado",'diff_lado_a_lado','toggle'),("Sobreposto",'diff_sobreposto','toggle'),("Recalcular",'diff_recalcular','action')]),
             ]
         self._layout_grupos(grupos)
+        # --- Botoes de plugins (M1) ---
+        botoes_plugin = self.plugin_mgr.botoes_toolbar()
+        if botoes_plugin:
+            # Agrupa botoes de plugin num grupo proprio na toolbar
+            grupos_plugin=[("PLUGINS",[(b['label'],b['key'],b.get('kind','action')) for b in botoes_plugin])]
+            self._layout_grupos(grupos_plugin,y0=self._toolbar_bottom+8)
 
     # TOOLTIP
     def _get_tooltip_at(self, mx, my):
@@ -806,6 +816,7 @@ class AppV101:
             if 'baseline' in nome_modelo.lower(): extra=' | baseline de teste (fraco): treine para melhorar'
             else: extra=f' | {nome_modelo}'
         self._flash(f"{nome_modo}: {len(pads_auto)} pads · {via} {self.last_detect_ms:.0f} ms (anti-via {'ON' if p.get('reject_vias') else 'OFF'}){extra}",cor=(0,220,100),dur=4.0 if extra else 2.5)
+        self.plugin_mgr.on_pad_detectado(self, self.pads)
 
     def _modo_detector_alternar(self):
         self.detector_modo='classico' if self.detector_modo=='smart' else 'smart'
@@ -1243,6 +1254,7 @@ class AppV101:
             vd['img_path']=img_alvo
         self.view_atual=nova
         self._aplicar_view_runtime(vd)
+        self.plugin_mgr.on_view_change(self, self.view_atual, nova)
         if primeira_vez and not self.pads and self.img is not None:
             self._detectar(False)
         self._salvar_view_atual(); self._salvar_sessao()
@@ -1864,6 +1876,7 @@ class AppV101:
         msg=f"KiCad: {res['pads']} pads, {res['nets']} nets -> {os.path.basename(res['caminho'])}"
         if res['avisos']: msg+=f" | {res['avisos'][0]}"
         self._flash(msg,cor=(0,220,120) if res['pads'] else (255,180,0),dur=5.0)
+        self.plugin_mgr.on_exportar_pcb(self, 'kicad', path)
 
     def _exportar_gerber(self):
         if self.tab=='anotar' and self.right_mode=='edit': self._salvar_edicao()
@@ -1888,6 +1901,7 @@ class AppV101:
         msg=f"Gerber: {res['pads']} pads, {res['aperturas']} aperturas -> {os.path.basename(res['caminho'])}"
         if res['avisos']: msg+=f" | {res['avisos'][0]}"
         self._flash(msg,cor=(0,220,120) if res['pads'] else (255,180,0),dur=5.0)
+        self.plugin_mgr.on_exportar_pcb(self, 'gerber', path)
 
     def _importar_pcb(self):
         path = dialogs_lib.escolher_arquivo(
@@ -2046,6 +2060,36 @@ class AppV101:
                 b.ativo=self.diff_side_by_side
             elif b.key=='diff_sobreposto':
                 b.ativo=not self.diff_side_by_side
+        # Botoes de plugin: marca ativo conforme estado do plugin (se houver chave correspondente)
+        for b in self.botoes_toolbar:
+            if b.key and b.key.startswith('plugin_'):
+                # Plugins nao tem estado de toggle persistente por padrao; mantem inativo (acao direta)
+                b.ativo=False
+
+    def _executar_botao_plugin(self, key: str) -> None:
+        """Executa a acao de um botao de plugin (chave no formato plugin_<nome>_<acao>)."""
+        partes=key.split('_',2)
+        if len(partes)<3:
+            self._flash("Plugin: chave de botao invalida",cor=(255,180,0),dur=2.5); return
+        nome_plugin=partes[1]
+        chave_acao=partes[2]
+        plugin=self.plugin_mgr.obter(nome_plugin)
+        if plugin is None:
+            self._flash(f"Plugin '{nome_plugin}' nao encontrado",cor=(255,0,0),dur=3.0); return
+        # Procura por um metodo no plugin que corresponda à chave da acao
+        metodos_possiveis=[f"btn_{chave_acao}", f"acao_{chave_acao}", chave_acao]
+        metodo=None
+        for m in metodos_possiveis:
+            if hasattr(plugin,m) and callable(getattr(plugin,m)):
+                metodo=getattr(plugin,m)
+                break
+        if metodo is None:
+            self._flash(f"Plugin '{nome_plugin}' nao tem acao '{chave_acao}'",cor=(255,180,0),dur=3.0); return
+        try:
+            metodo(self)
+            self._flash(f"Plugin '{nome_plugin}': {chave_acao} executado",cor=(0,220,120),dur=3.0)
+        except Exception as e:
+            self._flash(f"Plugin '{nome_plugin}' falhou: {e}",cor=(255,0,0),dur=3.5)
 
 
     def _detectar_tiles(self):
@@ -2648,6 +2692,8 @@ class AppV101:
     def _salvar_sessao(self):
         try:
             payload=self._payload_sessao()
+            # Hook M1: plugins podem modificar o payload antes de salvar
+            self.plugin_mgr.on_salvar_sessao(self, payload)
             tmp=self.session_path+'.tmp'
             with open(tmp,'w',encoding='utf-8') as f: json.dump(payload,f,indent=2,ensure_ascii=False)
             os.replace(tmp,self.session_path)
@@ -4126,6 +4172,9 @@ class AppV101:
         elif key=='diff_lado_a_lado': self._toggle_diff_lado_a_lado()
         elif key=='diff_sobreposto': self._toggle_diff_sobreposto()
         elif key=='diff_recalcular': self._recalcular_diff()
+        # --- Botoes de plugins (M1) ---
+        elif key and key.startswith('plugin_'):
+            self._executar_botao_plugin(key)
         elif key=='detectar_tiles': self._detectar_tiles()
         elif key=='regua': self._iniciar_regua()
         elif key=='comparar_ouro': self._comparar_ouro()
@@ -5013,6 +5062,7 @@ class AppV101:
         cv2.namedWindow(self.JANELA,cv2.WINDOW_NORMAL); cv2.resizeWindow(self.JANELA,self.view_w,self.view_h); cv2.moveWindow(self.JANELA,10,10); cv2.setMouseCallback(self.JANELA,self._on_mouse); self._rebuild_toolbar(); self.botoes_tab[0].ativo=True
         self._oferecer_recuperacao()
         print(f"\nOK v11.2 - {self.view_w}x{self.view_h} Backend:{self.backend_info} | Visao:{self.view_atual.upper()} | GPU:{'ON' if self.gpu_ativo else 'OFF'} | Ctrl+K comandos | feche pela janela (X)")
+        self.plugin_mgr.on_app_start(self)
         try:
             while True:
                 now=time.time()
@@ -5140,6 +5190,7 @@ class AppV101:
                     if self.tab=='anotar' and self.selected is not None and self.right_mode!='edit' and self.selected<len(self.pads): self._iniciar_edicao(self.selected)
                     elif self.right_mode=='edit': self._salvar_edicao()
         finally:
+            self.plugin_mgr.on_app_exit(self)
             cv2.destroyAllWindows()
             try:
                 if getattr(self,'_sessao_ruim',False):

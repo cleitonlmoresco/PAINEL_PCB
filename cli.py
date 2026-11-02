@@ -16,12 +16,27 @@ except ImportError:
     print("Erro: typer não instalado. pip install typer", file=sys.stderr)
     sys.exit(1)
 
+from core.plugin_system import create_plugin_manager, PluginError
+
 app = typer.Typer(
     name="anotador",
     help="AnotadorPad - CLI unificado para detecção, treino e anotação de pads de PCB",
     add_completion=False,
     no_args_is_help=True,
 )
+
+# Gerente de plugins (carregado lazy na primeira utilizacao)
+_plugin_mgr = None
+
+def _get_plugin_mgr():
+    global _plugin_mgr
+    if _plugin_mgr is None:
+        try:
+            _plugin_mgr = create_plugin_manager(app=None)
+        except Exception as e:
+            print(f"Aviso: nao foi possível carregar plugins ({e})", file=sys.stderr)
+            _plugin_mgr = PluginManager(app=None)  # vazio
+    return _plugin_mgr
 
 # ==================== COMANDOS DE TREINO ====================
 
@@ -417,6 +432,78 @@ def active_learn(
     
     print("\nActive Learning concluído!")
     print(f"Total rotulado: {len(orchestrator.labeled_samples)}")
+
+
+# ==================== PLUGINS (CLI) ====================
+
+@app.command("plugin-list")
+def plugin_list():
+    """Lista todos os plugins carregados (entry-points e pasta plugins/)."""
+    print("=== Plugins do AnotadorPad ===")
+    print(_get_plugin_mgr().resumo())
+    if not _get_plugin_mgr().plugins:
+        print("  (nenhum plugin carregado)")
+    cmds = _get_plugin_mgr().comandos_cli()
+    if cmds:
+        print("\nComandos CLI de plugins disponíveis:")
+        for nome, func, ajuda in cmds:
+            partes = nome.split(':', 1)
+            cmd_nome = partes[1] if len(partes) == 2 else nome
+            print(f"  anotador {cmd_nome}   - {ajuda}")
+
+
+@app.command("plugin-info")
+def plugin_info(nome: str):
+    """Exibe detalhes de um plugin carregado."""
+    plugin = _get_plugin_mgr().obter(nome)
+    if plugin is None:
+        print(f"Plugin '{nome}' não encontrado.")
+        print(f"Plugins disponíveis: {', '.join(_get_plugin_mgr().listar()) or '(nenhum)'}")
+        raise typer.Exit(1)
+    print(f"=== Plugin: {nome} ===")
+    print(f"Versão: {plugin.version}")
+    print(f"Descrição: {plugin.description}")
+    print(f"Ativo: {plugin.ativo}")
+    cmds = plugin.get_cli_commands()
+    if cmds:
+        print("Comandos CLI:")
+        for nm, func, ajuda in cmds:
+            print(f"  - {nm}: {ajuda}")
+    botoes = plugin.get_toolbar_buttons()
+    if botoes:
+        print(f"Botões GUI: {len(botoes)}")
+
+
+@app.command("plugin-exec")
+def plugin_exec(
+    nome: str = typer.Argument(..., help="Nome do comando do plugin (ex: resumo)"),
+    argumento: str = typer.Argument("", help="Argumento opcional para o comando"),
+):
+    """Executa um comando de plugin registrado."""
+    # Busca o comando em todos os plugins
+    encontrado = None
+    for nome_plugin, func, ajuda in _get_plugin_mgr().comandos_cli():
+        partes = nome_plugin.split(':', 1)
+        cmd_nome = partes[1] if len(partes) == 2 else nome_plugin
+        if cmd_nome == nome:
+            encontrado = func
+            break
+    if encontrado is None:
+        print(f"Comando de plugin '{nome}' não encontrado.")
+        cmds = _get_plugin_mgr().comandos_cli()
+        if cmds:
+            print("Comandos disponíveis:")
+            for n, f, a in cmds:
+                partes = n.split(':', 1)
+                print(f"  - {partes[1] if len(partes) == 2 else n}: {a}")
+        raise typer.Exit(1)
+    try:
+        encontrado(app=None, argumento=argumento)
+    except TypeError:
+        encontrado(app=None)
+    except Exception as e:
+        print(f"Erro ao executar plugin '{nome}': {e}", file=sys.stderr)
+        raise typer.Exit(1)
 
 
 # ==================== ENTRY POINT ====================

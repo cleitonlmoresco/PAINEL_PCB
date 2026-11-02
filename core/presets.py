@@ -154,6 +154,7 @@ DESCRICOES_BOTOES = {
     'diff_lado_a_lado': ("DIFF LADO A LADO", ["Mostra frente | verso lado a lado", "Pads em verde (ref) e azul (alvo)"]),
     'diff_sobreposto': ("DIFF SOBREPOSTO", ["Sobrepõe heatmap de diferença na imagem", "Ajuste a opacidade com o slider"]),
     'diff_recalcular': ("DIFF RECALCULAR", ["Reexecuta o alinhamento e o cálculo de diferença", "Use após trocar de visão ou ajustar o limiar"]),
+    'plugin_resumo_placa_plugin_resumo': ("PLUGIN: RESUMO PLACA", ["Exibe resumo de pads/familias/componentes", "Plugin de exemplo (resumo_placa)"]),
     'modo_al_validar': ("VALIDAR AL [V]", ["Modo validação Active Learning", "Clique em pseudo-label para aprovar", "Clique em vazio para criar novo", "Clique com botão direito para rejeitar"]),
     'al_pseudo': ("PSEUDO-LABEL [P]", ["Gera pseudo-labels automáticos", "Usa detecções com confiança > 0.8", "Converte para anotações amarelas"]),
     'al_train': ("TREINAR LoRA [T]", ["Fine-tuning LoRA do modelo IA", "Usa labels humanos + pseudo-labels", "Salva modelo atualizado em models/"]),

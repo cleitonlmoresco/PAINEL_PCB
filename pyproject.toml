@@ -55,6 +55,10 @@ gpu = [
 anotador = "cli:app"
 anotador-train = "cli:app"
 
+[project.entry-points."anotadorpad.plugins"]
+# Exemplo: pacotes externos podem registrar plugins aqui.
+# resumo_placa = "plugins.resumo_placa:plugin"
+
 [tool.ruff]
 line-length = 120
 target-version = "py311"
