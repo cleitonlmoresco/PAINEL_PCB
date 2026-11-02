@@ -1,0 +1,103 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "anotadorpad"
+version = "11.7.0"
+description = "AnotadorPad - Anotador de pads de PCB com IA"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "Cleiton Moresco", email = "cleiton@example.com"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Manufacturing",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+]
+dependencies = [
+    "opencv-python>=4.10",
+    "numpy>=1.24",
+    "pillow>=10.0",
+    "requests>=2.31",
+    "pillow-heif>=0.18",
+    "ultralytics>=8.3.0",
+    "onnx>=1.16",
+    "typer>=0.9",
+    "pyyaml>=6.0",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "pytest-mock>=3.12",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "mutmut>=2.4",
+    "pytest-cov>=4.1",
+]
+train = [
+    "ultralytics>=8.3.0",
+    "onnx>=1.16",
+]
+gpu = [
+    "torch>=2.3",
+    "torchvision>=0.18",
+]
+
+[project.scripts]
+anotador = "cli:app"
+anotador-train = "cli:app"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "T20"]
+ignore = ["E501", "B008"]
+fixable = ["ALL"]
+unfixable = ["T20"]
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+exclude = ["build", "dist", "runs", "__pycache__"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+addopts = "-v --strict-markers --strict-config"
+markers = [
+    "slow: marca testes lentos",
+    "gpu: marca testes que precisam de GPU",
+    "integration: marca testes de integração",
+]
+
+[tool.coverage.run]
+source = ["app", "core", "storage", "ui", "tools"]
+omit = ["tests/*", "build/*", "dist/*", "__pycache__/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+]
+
+[tool.setuptools.package-dir]
+"" = "."
