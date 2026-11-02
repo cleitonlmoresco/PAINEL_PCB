@@ -245,6 +245,76 @@ def converter(
     print(f"Convertido: {entrada} -> {saida}")
 
 
+# ==================== IMPORT/EXPORT PCB (KiCad / Eagle / Gerber) ====================
+
+@app.command("export-kicad")
+def export_kicad(
+    projeto: str = typer.Argument(..., help="Pasta do projeto (sessao_*.json / CSVs)"),
+    saida: Optional[str] = typer.Option(None, "--saida", "-o", help="Arquivo .kicad_pcb"),
+    escala: float = typer.Option(0.0, "--escala", "-e", help="mm por pixel (Régua do app); 0 = aviso/0.1"),
+    lado: str = typer.Option("frente", "--lado", "-l", help="frente | verso"),
+    largura: int = typer.Option(0, "--largura", help="Largura da imagem em px (contorno da placa)"),
+    altura: int = typer.Option(0, "--altura", help="Altura da imagem em px"),
+):
+    """Exporta o projeto anotado para KiCad (.kicad_pcb)."""
+    from core import kicad
+    from storage.loader import carregar_projeto_universal
+
+    pads, _meas, nets, comps, _ = carregar_projeto_universal(projeto)
+    destino = saida or str(Path(projeto) / 'placa.kicad_pcb')
+    res = kicad.exportar_kicad(pads, comps, nets, destino, escala, lado, largura, altura)
+    print(f"KiCad: {res['pads']} pads, {res['nets']} nets -> {res['caminho']}")
+    for aviso in res['avisos']:
+        print(f"AVISO: {aviso}")
+
+
+@app.command("export-gerber")
+def export_gerber(
+    projeto: str = typer.Argument(..., help="Pasta do projeto (sessao_*.json / CSVs)"),
+    saida: Optional[str] = typer.Option(None, "--saida", "-o", help="Arquivo .gbr"),
+    escala: float = typer.Option(0.0, "--escala", "-e", help="mm por pixel; 0 = aviso/0.1"),
+    lado: str = typer.Option("frente", "--lado", "-l", help="frente | verso"),
+    largura: int = typer.Option(0, "--largura"),
+    altura: int = typer.Option(0, "--altura"),
+):
+    """Exporta o cobre (pads) do projeto para Gerber RS-274X."""
+    from core import kicad
+    from storage.loader import carregar_projeto_universal
+
+    pads, _meas, _nets, _comps, _ = carregar_projeto_universal(projeto)
+    destino = saida or str(Path(projeto) / 'gerber' / 'cobre.gbr')
+    res = kicad.exportar_gerber(pads, destino, escala, largura, altura, lado)
+    print(f"Gerber: {res['pads']} pads, {res['aperturas']} aperturas -> {res['caminho']}")
+    for aviso in res['avisos']:
+        print(f"AVISO: {aviso}")
+
+
+@app.command("import-pcb")
+def import_pcb(
+    arquivo: str = typer.Argument(..., help=".kicad_pcb, .brd ou .gbr"),
+    saida: str = typer.Option("pcb_importado", "--saida", "-o", help="Pasta de destino"),
+    escala: float = typer.Option(0.0, "--escala", "-e", help="mm por pixel; 0 = encaixa na imagem"),
+    largura: int = typer.Option(1200, "--largura"),
+    altura: int = typer.Option(900, "--altura"),
+):
+    """Importa KiCad/Eagle/Gerber e grava pads/nets/componentes em CSV."""
+    from core.kicad import importar_arquivo
+    from storage.saver import salvar_csvs, salvar_componentes_csv
+
+    res = importar_arquivo(arquivo, largura, altura, escala)
+    if not res['pads']:
+        print(f"Nada importado ({res['formato']}): {'; '.join(res['avisos']) or 'sem pads'}", file=sys.stderr)
+        raise typer.Exit(1)
+
+    Path(saida).mkdir(parents=True, exist_ok=True)
+    salvar_csvs(res['pads'], {}, res['nets'], saida)
+    salvar_componentes_csv(res['componentes'], saida)
+    print(f"{res['formato']}: {len(res['pads'])} pads, {len(res['componentes'])} comps, "
+          f"{len(res['nets'])} nets -> {Path(saida).resolve()}")
+    for aviso in res['avisos']:
+        print(f"AVISO: {aviso}")
+
+
 # ==================== COMANDOS DE PROJETO ====================
 
 @app.command("new")

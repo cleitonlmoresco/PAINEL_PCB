@@ -218,6 +218,21 @@ corrigiu os seguintes bugs:
 - Botão **"Pasta de projetos..."** no diálogo define/lembra outra pasta
 - `python main.py IAW 9GV` também procura dentro da pasta de projetos
 
+## Integração CAD: KiCad / Eagle / Gerber (v11.8)
+- **Exportar KiCad** (grupo `PCB` na barra): gera `.kicad_pcb` com um *footprint*
+  por componente, pads com forma/tamanho reais e as famílias como **nets**
+  (`(net N "GND")`). O contorno da placa sai em `Edge.Cuts`.
+- **Exportar Gerber**: gera RS-274X com os pads como flashes `D03`
+  (aperturas C/R/O) em `<projeto>/gerber/`.
+- **Importar**: aceita `.kicad_pcb`, `.brd` (Eagle) e `.gbr` (Gerber) —
+  cria pads, componentes e famílias na visão atual (desfaz com `[Z]`).
+- A escala vem da **Régua [R]** (`mm/px`). Sem calibração, exporta com 0.1 mm/px
+  e importa encaixando o desenho na imagem (o aviso aparece na barra).
+- CLI:
+  - `anotador export-kicad <projeto> -o placa.kicad_pcb --escala 0.05`
+  - `anotador export-gerber <projeto> -o cobre.gbr --escala 0.05`
+  - `anotador import-pcb placa.kicad_pcb -o pcb_importado --escala 0.05`
+
 ## Pads passantes (frente ↔ verso)
 - Ao trocar de visão, o app **alinha as fotos** (ORB + espelho) e vincula
   automaticamente os pads do **mesmo furo/pad** dos dois lados

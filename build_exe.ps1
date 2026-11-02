@@ -39,6 +39,7 @@ py -3.11 -m PyInstaller `
   --hidden-import core.transform `
   --hidden-import core.state_manager `
   --hidden-import core.active_learning `
+  --hidden-import core.kicad `
   main.py
 
 if ($LASTEXITCODE -eq 0) {

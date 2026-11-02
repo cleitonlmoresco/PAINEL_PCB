@@ -44,6 +44,7 @@ from core import gpu as gpu_lib
 from core import prefs as prefs_lib
 from core import report as report_lib
 from core import transform as transform_lib
+from core import kicad as kicad_lib
 from core.units import parse_valor, formatar as fmt_unidade
 from core.detector import detectar_pads_com_mascara_v84, detectar_pads_tiles
 from core.imgio import ler_imagem, imwrite as imwrite_u
@@ -497,6 +498,7 @@ class AppV101:
                 ("VISAO",[("Familias",'familias','toggle'),("Camadas",'camadas','toggle'),("IDs",'toggle_ids','toggle'),("Mira",'toggle_mira','toggle')]),
                 ("FILTROS",[("Todos",'f_todos','filter'),("OK",'f_ok','filter'),("SUSP",'f_susp','filter'),("FALHA",'f_falha','filter'),("Sem medir",'f_vazio','filter'),("Buscar",'buscar','action')]),
                 ("PLACA",[("LIG/DESL",'toggle_estado','toggle')]),
+                ("PCB",[("KiCad",'export_kicad','success'),("Gerber",'export_gerber','success'),("Importar",'import_pcb','action')]),
             ]
         self._layout_grupos(grupos)
 
@@ -1652,6 +1654,9 @@ class AppV101:
             ("Capturar da câmera", 'camera'),
             ("Transferir anotações para nova foto", 'transferir'),
             ("Importar centroides (CSV/KiCad)", 'importar_centroides'),
+            ("Exportar KiCad PCB (.kicad_pcb)", 'export_kicad'),
+            ("Exportar Gerber (cobre)", 'export_gerber'),
+            ("Importar KiCad / Eagle / Gerber", 'import_pcb'),
             ("Régua / calibrar escala mm-por-px", 'regua'),
             ("Camadas (visibilidade)", 'camadas'),
             ("Próximo pad sem medir", 'prox_pendente'),
@@ -1805,6 +1810,110 @@ class AppV101:
         self._invalidar_cache_visiveis(); self._marcar_dirty()
         self._salvar_view_atual(); self._salvar_sessao()
         self._flash(f"{len(pts)} centroides importados",cor=(0,220,120),dur=2.5)
+
+    # ==================== IMPORT/EXPORT PCB (KiCad / Eagle / Gerber) ====================
+
+    def _lado_da_view(self):
+        return 'verso' if self.view_atual=='verso' else 'frente'
+
+    def _nome_base_export(self):
+        base=os.path.basename(os.path.abspath(self.out_dir)) or 'placa'
+        return f"{base}_{self.view_atual}"
+
+    def _exportar_kicad(self):
+        if self.tab=='anotar' and self.right_mode=='edit': self._salvar_edicao()
+        self._salvar_view_atual()
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+            root=tk.Tk(); root.withdraw(); root.attributes('-topmost',True)
+            path=filedialog.asksaveasfilename(title="Exportar KiCad PCB",initialdir=os.path.abspath(self.out_dir),
+                                              initialfile=self._nome_base_export()+'.kicad_pcb',defaultextension='.kicad_pcb',
+                                              filetypes=[("KiCad PCB","*.kicad_pcb"),("Todos","*.*")])
+            root.destroy()
+        except Exception:
+            path=None
+        if not path: return
+        try:
+            res=kicad_lib.exportar_kicad(self.pads,self.componentes,self.nets,path,
+                                         self.mm_por_px,self._lado_da_view(),self.w0,self.h0)
+        except Exception as e:
+            self._flash(f"KiCad: falha ao exportar ({e})",cor=(255,0,0),dur=3.5); return
+        msg=f"KiCad: {res['pads']} pads, {res['nets']} nets -> {os.path.basename(res['caminho'])}"
+        if res['avisos']: msg+=f" | {res['avisos'][0]}"
+        self._flash(msg,cor=(0,220,120) if res['pads'] else (255,180,0),dur=5.0)
+
+    def _exportar_gerber(self):
+        if self.tab=='anotar' and self.right_mode=='edit': self._salvar_edicao()
+        self._salvar_view_atual()
+        pasta=os.path.join(os.path.abspath(self.out_dir),'gerber')
+        try:
+            os.makedirs(pasta,exist_ok=True)
+            import tkinter as tk
+            from tkinter import filedialog
+            root=tk.Tk(); root.withdraw(); root.attributes('-topmost',True)
+            path=filedialog.asksaveasfilename(title="Exportar Gerber (cobre)",initialdir=pasta,
+                                              initialfile=self._nome_base_export()+'.gbr',defaultextension='.gbr',
+                                              filetypes=[("Gerber","*.gbr *.gtl *.gbl *.ger"),("Todos","*.*")])
+            root.destroy()
+        except Exception:
+            path=None
+        if not path: return
+        try:
+            res=kicad_lib.exportar_gerber(self.pads,path,self.mm_por_px,self.w0,self.h0,self._lado_da_view())
+        except Exception as e:
+            self._flash(f"Gerber: falha ao exportar ({e})",cor=(255,0,0),dur=3.5); return
+        msg=f"Gerber: {res['pads']} pads, {res['aperturas']} aperturas -> {os.path.basename(res['caminho'])}"
+        if res['avisos']: msg+=f" | {res['avisos'][0]}"
+        self._flash(msg,cor=(0,220,120) if res['pads'] else (255,180,0),dur=5.0)
+
+    def _importar_pcb(self):
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+            root=tk.Tk(); root.withdraw(); root.attributes('-topmost',True)
+            path=filedialog.askopenfilename(title="Importar KiCad / Eagle / Gerber",initialdir=os.path.abspath(self.out_dir),
+                                            filetypes=[("PCB (KiCad/Eagle/Gerber)","*.kicad_pcb *.brd *.gbr *.ger *.gtl *.gbl *.art"),
+                                                       ("KiCad","*.kicad_pcb"),("Eagle","*.brd"),("Gerber","*.gbr *.ger *.gtl *.gbl *.art"),
+                                                       ("Todos","*.*")])
+            root.destroy()
+        except Exception:
+            path=None
+        if not path or not os.path.exists(path): return
+        try:
+            res=kicad_lib.importar_arquivo(path,self.w0,self.h0,self.mm_por_px)
+        except Exception as e:
+            self._flash(f"Importar: falha ({e})",cor=(255,0,0),dur=3.5); return
+        if not res['pads']:
+            aviso=res['avisos'][0] if res['avisos'] else 'nenhum pad encontrado'
+            self._flash(f"Importar: {aviso}",cor=(255,180,0),dur=4.5); return
+        self._push_undo()
+        ids=[]
+        for p in res['pads']:
+            novo={'id':self.next_id,'cx':p['cx'],'cy':p['cy'],'x':p['cx'],'y':p['cy'],
+                  'w':p['w'],'h':p['h'],'area':p['area'],'manual':False,'forma':p.get('forma','retangulo')}
+            if p.get('pino'): novo['pino']=p['pino']
+            if p.get('ref'): novo['ref']=p['ref']
+            self.pads.append(novo); ids.append(self.next_id); self.next_id+=1
+        for c in res['componentes']:
+            comp={'id':self.next_comp_id,'nome':c['nome'],'tipo':c.get('tipo','ci'),
+                  'forma':c.get('forma','retangulo_h'),'cor':list(c.get('cor') or [80,140,255]),
+                  'pads':[ids[i] for i in (c.get('pads') or []) if 0<=i<len(ids)],
+                  'x1':c.get('x1',0),'y1':c.get('y1',0),'x2':c.get('x2',0),'y2':c.get('y2',0),
+                  'valor':'','tensao':'','obs':'','pino1':None}
+            if comp['pads']: comp['pino1']=comp['pads'][0]
+            self.componentes.append(comp); self.next_comp_id+=1
+        for n in res['nets']:
+            membros=[ids[i] for i in (n.get('pads') or []) if 0<=i<len(ids)]
+            if not membros: continue
+            self.nets.append({'id':self.next_net_id,'nome':n['nome'],
+                              'cor':list(n.get('cor') or [80,140,255]),'pads':membros})
+            self.next_net_id+=1
+        self.pads.sort(key=lambda pp:(pp['cy']//80,pp['cx']))
+        self._rebuild_pad_to_net(); self._invalidar_cache_visiveis(); self._marcar_dirty()
+        self._salvar_view_atual(); self._salvar_sessao()
+        extra=f", {len(res['componentes'])} comps, {len(res['nets'])} nets" if res['componentes'] else ''
+        self._flash(f"{res['formato'].upper()}: {len(ids)} pads importados{extra}",cor=(0,220,120),dur=4.5)
 
     def _detectar_tiles(self):
         p=self._params_from_sliders()
@@ -3826,6 +3935,9 @@ class AppV101:
         elif key=='camera': self._capturar_camera()
         elif key=='transferir': self._transferir_anotacoes()
         elif key=='importar_centroides': self._importar_centroides()
+        elif key=='export_kicad': self._exportar_kicad()
+        elif key=='export_gerber': self._exportar_gerber()
+        elif key=='import_pcb': self._importar_pcb()
         elif key=='detectar_tiles': self._detectar_tiles()
         elif key=='regua': self._iniciar_regua()
         elif key=='comparar_ouro': self._comparar_ouro()
@@ -4712,7 +4824,7 @@ class AppV101:
     def iniciar(self):
         cv2.namedWindow(self.JANELA,cv2.WINDOW_NORMAL); cv2.resizeWindow(self.JANELA,self.view_w,self.view_h); cv2.moveWindow(self.JANELA,10,10); cv2.setMouseCallback(self.JANELA,self._on_mouse); self._rebuild_toolbar(); self.botoes_tab[0].ativo=True
         self._oferecer_recuperacao()
-        print(f"\nOK v11.2 - {self.view_w}x{self.view_h} Backend:{self.backend_info} | Visao:{self.view_atual.upper()} | GPU:{'ON' if self.gpu_ativo else 'OFF'} | Ctrl+K comandos | Ctrl+Q sair")
+        print(f"\nOK v11.2 - {self.view_w}x{self.view_h} Backend:{self.backend_info} | Visao:{self.view_atual.upper()} | GPU:{'ON' if self.gpu_ativo else 'OFF'} | Ctrl+K comandos | feche pela janela (X)")
         try:
             while True:
                 now=time.time()
@@ -4765,8 +4877,7 @@ class AppV101:
                     if self.mode in ('anotacao','pino','gnd'): self._ir_para_navegar(); continue
                     if self.search_id is not None and not self.inline_input_active: self.search_id=None; self.filter_familia_id=None; self._invalidar_cache_visiveis()
                     self._ir_para_navegar(); continue
-                if key==ord('q') or key==ord('Q') or key_raw==17 or key==17: break
-                elif ctrl_z or key==ord('['): self._undo(); continue
+                if ctrl_z or key==ord('['): self._undo(); continue
                 elif ctrl_y or key==ord(']'): self._redo(); continue
                 elif key==ord('o') or key==ord('O'): self._abrir_imagem_dialog()
                 elif key==ord('l') or key==ord('L'): self._abrir_projeto_dialog()

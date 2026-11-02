@@ -1,5 +1,6 @@
 import sys
 import os
+import traceback
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 if ROOT not in sys.path:
@@ -27,7 +28,7 @@ Dentro do app:
   [Ctrl+K] paleta de comandos       [Ctrl+N] salvar e proximo sem medir
   [R] regua / escala mm-por-px      [7] relatorio HTML
   [8] camera                        [9] comparar com placa ouro
-  [Ctrl+L] camadas                  [S] salvar   [Q] sair
+  [Ctrl+L] camadas                  [S] salvar   (fechar: X da janela)
 
 Formatos de projeto aceitos:
   sessao_*.json (pega a mais recente), pads_final.csv + medicoes_final.csv,
@@ -69,6 +70,23 @@ def _abrir_por_projeto(projeto, imagem=None):
 
 
 def main():
+    try:
+        _main()
+    except Exception:
+        traceback.print_exc()
+        # No EXE congelado o console fecha sozinho; deixa visível por 10 s.
+        if getattr(sys, 'frozen', False):
+            import time as _t
+            print("\n--- Pressione Enter para sair (ou aguarde 10s) ---")
+            try:
+                import msvcrt
+                _t.sleep(10)
+            except Exception:
+                _t.sleep(10)
+        raise
+
+
+def _main():
     args = sys.argv[1:]
     if not args or args[0] in ('-h', '--help', '/?', '/help'):
         if not args:

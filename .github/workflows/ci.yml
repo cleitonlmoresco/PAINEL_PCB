@@ -141,6 +141,7 @@ jobs:
             --hidden-import core.transform `
             --hidden-import core.state_manager `
             --hidden-import core.active_learning `
+            --hidden-import core.kicad `
             main.py
 
       - name: Check EXE
