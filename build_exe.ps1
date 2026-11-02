@@ -16,7 +16,7 @@ $excluir = @(
   'torch','torchvision','torchaudio','ultralytics','loralib',
   'matplotlib','pandas','scipy','sympy','networkx',
   'IPython','jupyter','notebook','nbformat','nbconvert',
-  'tkinter','PyQt5','PyQt6','PySide2','PySide6',
+  'PyQt5','PyQt6','PySide2','PySide6',
   'tensorflow','keras','transformers','numba','llvmlite'
 ) | ForEach-Object { "--exclude-module"; $_ }
 
@@ -40,6 +40,11 @@ py -3.11 -m PyInstaller `
   --hidden-import core.state_manager `
   --hidden-import core.active_learning `
   --hidden-import core.kicad `
+  --hidden-import core.dialogs `
+  --hidden-import core.diff_viewer `
+  --hidden-import tkinter `
+  --hidden-import tkinter.filedialog `
+  --hidden-import tkinter.messagebox `
   main.py
 
 if ($LASTEXITCODE -eq 0) {

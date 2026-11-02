@@ -45,6 +45,8 @@ from core import prefs as prefs_lib
 from core import report as report_lib
 from core import transform as transform_lib
 from core import kicad as kicad_lib
+from core import dialogs as dialogs_lib
+from core import diff_viewer as diff_lib
 from core.units import parse_valor, formatar as fmt_unidade
 from core.detector import detectar_pads_com_mascara_v84, detectar_pads_tiles
 from core.imgio import ler_imagem, imwrite as imwrite_u
@@ -223,6 +225,15 @@ class AppV101:
         self.views_disponiveis=[('frente','FRENTE','3'),('verso','VERSO','4'),('conector','CONECTOR','5')]
         self._thumbs={}
         self._pad_to_net={}
+        # ==================== DIFF VIEWER (frente x verso) ====================
+        self.modo_diff=False               # ativa o diff viewer
+        self.diff_view_ref='frente'        # visão de referência
+        self.diff_view_alvo='verso'        # visão alvo
+        self.diff_alpha=0.5                # opacidade do heatmap (sobreposto)
+        self.diff_threshold=40             # limiar de diferença (0-255)
+        self.diff_side_by_side=True        # True=lado a lado | False=sobreposto
+        self.diff_result=None              # cache do último cálculo
+        self.diff_precisa_recalcular=True
         # Anotacoes livres + marcacao de pinos/GND (estilo RastreCurve)
         self.anotacoes=[]
         self.next_anot_id=1
@@ -499,6 +510,7 @@ class AppV101:
                 ("FILTROS",[("Todos",'f_todos','filter'),("OK",'f_ok','filter'),("SUSP",'f_susp','filter'),("FALHA",'f_falha','filter'),("Sem medir",'f_vazio','filter'),("Buscar",'buscar','action')]),
                 ("PLACA",[("LIG/DESL",'toggle_estado','toggle')]),
                 ("PCB",[("KiCad",'export_kicad','success'),("Gerber",'export_gerber','success'),("Importar",'import_pcb','action')]),
+                ("DIFF",[("Diff frente x verso",'modo_diff','toggle'),("Lado a lado",'diff_lado_a_lado','toggle'),("Sobreposto",'diff_sobreposto','toggle'),("Recalcular",'diff_recalcular','action')]),
             ]
         self._layout_grupos(grupos)
 
@@ -869,17 +881,12 @@ class AppV101:
 
     def _escolher_modelo_ia(self):
         """Permite apontar qualquer .onnx exportado (YOLO) sem renomear arquivos."""
-        try:
-            import tkinter as tk
-            from tkinter import filedialog
-            root=tk.Tk(); root.withdraw(); root.attributes('-topmost',True)
-            inicial=os.path.join(ROOT,'models')
-            caminho=filedialog.askopenfilename(title='Escolher modelo IA (.onnx)',
-                                               filetypes=[('Modelo ONNX','*.onnx'),('Todos','*.*')],
-                                               initialdir=inicial if os.path.isdir(inicial) else ROOT)
-            root.destroy()
-        except Exception:
-            caminho=None
+        inicial=os.path.join(ROOT,'models')
+        caminho=dialogs_lib.escolher_arquivo(
+            'Escolher modelo IA (.onnx)',
+            initialdir=inicial if os.path.isdir(inicial) else ROOT,
+            filetypes=[('Modelo ONNX','*.onnx'),('Todos','*.*')],
+        )
         if not caminho: return
         try:
             from core.detector_ia import DetectorIA
@@ -892,17 +899,17 @@ class AppV101:
             self._flash(f"Falha ao carregar modelo IA: {e}",cor=(255,0,0),dur=4.0)
 
     def _exportar_dataset(self):
-        try:
-            import tkinter as tk
-            from tkinter import filedialog, messagebox
-            root = tk.Tk(); root.withdraw(); root.attributes('-topmost', True)
-            destino = filedialog.askdirectory(title="Pasta onde criar o dataset YOLO", initialdir=os.path.abspath(self.out_dir))
-            todos = False
-            if destino:
+        destino = dialogs_lib.escolher_pasta("Pasta onde criar o dataset YOLO", initialdir=os.path.abspath(self.out_dir))
+        todos = False
+        if destino:
+            try:
+                import tkinter as tk
+                from tkinter import messagebox
+                root = tk.Tk(); root.withdraw(); root.attributes('-topmost', True)
                 todos = messagebox.askyesno("Dataset", "Incluir TODOS os projetos encontrados?\n\nSim = todos | Nao = somente o projeto atual")
-            root.destroy()
-        except Exception:
-            return
+                root.destroy()
+            except Exception:
+                todos = False
         if not destino:
             return
         from core import dataset as ds
@@ -914,17 +921,17 @@ class AppV101:
         self._flash(f"Dataset: {stats['tiles']} tiles de {stats['imagens']} imagem(ns) - {saida}",cor=(0,220,120),dur=4.0)
 
     def _pre_anotar_album(self):
-        try:
-            import tkinter as tk
-            from tkinter import filedialog, messagebox
-            root = tk.Tk(); root.withdraw(); root.attributes('-topmost', True)
-            pasta = filedialog.askdirectory(title="Pasta com o album de fotos")
-            ok = False
-            if pasta:
+        pasta = dialogs_lib.escolher_pasta("Pasta com o album de fotos")
+        ok = False
+        if pasta:
+            try:
+                import tkinter as tk
+                from tkinter import messagebox
+                root = tk.Tk(); root.withdraw(); root.attributes('-topmost', True)
                 ok = messagebox.askyesno("Pre-anotar album", "Isso roda o detector smart em todas as fotos e pode demorar varios minutos.\n\nPara 500+ fotos, prefira o script:\n tools/exportar_dataset.py album\n\nContinuar agora?")
-            root.destroy()
-        except Exception:
-            return
+                root.destroy()
+            except Exception:
+                ok = False
         if not pasta or not ok:
             return
         from core import dataset as ds
@@ -934,14 +941,8 @@ class AppV101:
         self._flash(f"Album: {stats['imagens']} fotos, {stats['tiles']} tiles, {stats['pads']} pads - {saida}",cor=(0,220,120),dur=4.0)
 
     def _abrir_imagem_dialog(self):
-        try:
-            import tkinter as tk
-            from tkinter import filedialog
-            root=tk.Tk(); root.withdraw(); root.attributes('-topmost',True)
-            path=filedialog.askopenfilename(title="Abrir Imagem da Placa", filetypes=[("Imagens","*.jpg *.jpeg *.png *.bmp *.tiff"),("Todos","*.*")])
-            root.destroy()
-            if path and os.path.exists(path): self._carregar_nova_imagem(path)
-        except Exception as e: self._flash(f"Erro abrir imagem: {e}",cor=(255,0,0),dur=2.0)
+        path = dialogs_lib.escolher_arquivo("Abrir Imagem da Placa", filetypes=[("Imagens","*.jpg *.jpeg *.png *.bmp *.tiff"),("Todos","*.*")])
+        if path and os.path.exists(path): self._carregar_nova_imagem(path)
     def _carregar_nova_imagem(self,path):
         img=ler_imagem(path)
         if img is None: self._flash("Imagem inválida",cor=(255,0,0)); return
@@ -985,14 +986,12 @@ class AppV101:
         return _loader_procurar_img(pasta)
 
     def _perguntar_imagem_projeto(self,pasta):
-        try:
-            import tkinter as tk
-            from tkinter import filedialog
-            root=tk.Tk(); root.withdraw(); root.attributes('-topmost',True)
-            path=filedialog.askopenfilename(title="Projeto sem imagem associada - escolha a foto da placa",initialdir=pasta,filetypes=[("Imagens","*.jpg *.jpeg *.png *.bmp *.tiff"),("Todos","*.*")])
-            root.destroy()
-            return path if path and os.path.exists(path) else None
-        except Exception: return None
+        path = dialogs_lib.escolher_arquivo(
+            "Projeto sem imagem associada - escolha a foto da placa",
+            initialdir=pasta,
+            filetypes=[("Imagens","*.jpg *.jpeg *.png *.bmp *.tiff"),("Todos","*.*")],
+        )
+        return path if path and os.path.exists(path) else None
 
     def _abrir_projeto(self,pasta):
         """Abre um projeto de placa: sessão JSON (ou CSVs), imagem associada e estado completo."""
@@ -1183,15 +1182,13 @@ class AppV101:
 
     def _perguntar_imagem_view(self,view):
         label=next((r for c,r,_ in self.views_disponiveis if c==view),view.upper())
-        try:
-            import tkinter as tk
-            from tkinter import filedialog
-            root=tk.Tk(); root.withdraw(); root.attributes('-topmost',True)
-            inicial=self.out_dir if os.path.isdir(self.out_dir) else os.getcwd()
-            path=filedialog.askopenfilename(title=f"Visão {label} - escolha a foto da placa",initialdir=inicial,filetypes=[("Imagens","*.jpg *.jpeg *.png *.bmp *.tiff"),("Todos","*.*")])
-            root.destroy()
-            return path if path and os.path.exists(path) else None
-        except Exception: return None
+        inicial=self.out_dir if os.path.isdir(self.out_dir) else os.getcwd()
+        path = dialogs_lib.escolher_arquivo(
+            f"Visão {label} - escolha a foto da placa",
+            initialdir=inicial,
+            filetypes=[("Imagens","*.jpg *.jpeg *.png *.bmp *.tiff"),("Todos","*.*")],
+        )
+        return path if path and os.path.exists(path) else None
 
     def _thumb_view(self,view):
         vd=self.views_store.get(view) or {}
@@ -1282,7 +1279,9 @@ class AppV101:
         self._marcar_dirty(); self._salvar_prefs()
 
     def _escolher_imagem_pasta(self,pasta,imgs):
-        try:
+        if not imgs:
+            return None
+        if dialogs_lib._disponivel():
             import tkinter as tk
             root=tk.Tk(); root.title("Nova placa - escolha a foto principal (FRENTE)")
             root.attributes('-topmost',True)
@@ -1299,8 +1298,26 @@ class AppV101:
             root.bind('<Return>',lambda e: ok()); root.bind('<Escape>',lambda e: root.destroy())
             root.mainloop()
             return escolha['p']
-        except Exception:
+        # Fallback sem tkinter (console)
+        print(f"\n=== ESCOLHER FOTO PRINCIPAL ===")
+        print(f"Pasta: {pasta}")
+        for i, f in enumerate(imgs, 1):
+            print(f"  {i}. {os.path.relpath(f, pasta)}")
+        print("  q. Cancelar")
+        try:
+            escolha = input("Escolha um número: ").strip()
+        except EOFError:
             return None
+        if escolha.lower() in ('q', ''):
+            return None
+        try:
+            idx = int(escolha) - 1
+            if 0 <= idx < len(imgs):
+                return imgs[idx]
+        except ValueError:
+            pass
+        self._flash("Escolha invalida", cor=(255, 180, 0), dur=2.0)
+        return None
 
     def _novo_projeto_em_pasta(self,pasta):
         exts=('.jpg','.jpeg','.png','.bmp','.tif','.tiff','.heic','.heif')
@@ -1505,7 +1522,7 @@ class AppV101:
             self._flash("Cadastre as imagens das outras visoes primeiro (tecla 6)",cor=(255,180,0),dur=3.0); return
         alvo_view=opcoes[0][0]
         if len(opcoes)>1:
-            try:
+            if dialogs_lib._disponivel():
                 import tkinter as tk
                 root=tk.Tk(); root.title("Vincular com qual visao?"); root.attributes('-topmost',True)
                 lb=tk.Listbox(root,width=42,height=4,font=('Consolas',10))
@@ -1519,8 +1536,22 @@ class AppV101:
                 root.bind('<Return>',lambda e: ok()); root.mainloop()
                 if not escolha['v']: return
                 alvo_view=escolha['v']
-            except Exception:
-                pass
+            else:
+                print("\n=== VINCULAR COM QUAL VISÃO? ===")
+                for i,(c,r) in enumerate(opcoes,1):
+                    print(f"  {i}. {r} ({c})")
+                print("  q. Cancelar (usa a primeira)")
+                try:
+                    escolha = input("Escolha um número: ").strip()
+                except EOFError:
+                    escolha = ''
+                if escolha.lower() not in ('q',''):
+                    try:
+                        idx=int(escolha)-1
+                        if 0<=idx<len(opcoes):
+                            alvo_view=opcoes[idx][0]
+                    except ValueError:
+                        pass
         vd_alvo=self.views_store.get(alvo_view) or {}
         img_alvo=ler_imagem(self._resolver_img_sessao(vd_alvo.get('img_path'),self.out_dir))
         if img_alvo is None:
@@ -1762,15 +1793,12 @@ class AppV101:
             except Exception: pass
 
     def _transferir_anotacoes(self):
-        try:
-            import tkinter as tk
-            from tkinter import filedialog
-            root=tk.Tk(); root.withdraw(); root.attributes('-topmost',True)
-            inicial=os.path.abspath(self.out_dir) if os.path.isdir(self.out_dir) else os.getcwd()
-            path=filedialog.askopenfilename(title="Nova foto da MESMA visão (anotações serão transferidas)",initialdir=inicial,filetypes=[("Imagens","*.jpg *.jpeg *.png *.bmp *.tiff"),("Todos","*.*")])
-            root.destroy()
-        except Exception:
-            path=None
+        inicial=os.path.abspath(self.out_dir) if os.path.isdir(self.out_dir) else os.getcwd()
+        path = dialogs_lib.escolher_arquivo(
+            "Nova foto da MESMA visão (anotações serão transferidas)",
+            initialdir=inicial,
+            filetypes=[("Imagens","*.jpg *.jpeg *.png *.bmp *.tiff"),("Todos","*.*")],
+        )
         if not path or not os.path.exists(path): return
         novo=ler_imagem(path)
         if novo is None: self._flash("Imagem inválida",cor=(255,0,0),dur=2.0); return
@@ -1789,14 +1817,11 @@ class AppV101:
         self._flash(f"Transferido: {len(self.pads)} pads, {len(self.componentes)} componentes",cor=(0,220,120),dur=3.0)
 
     def _importar_centroides(self):
-        try:
-            import tkinter as tk
-            from tkinter import filedialog
-            root=tk.Tk(); root.withdraw(); root.attributes('-topmost',True)
-            path=filedialog.askopenfilename(title="CSV de centroides (KiCad pos / genérico)",initialdir=os.path.abspath(self.out_dir),filetypes=[("CSV","*.csv *.txt"),("Todos","*.*")])
-            root.destroy()
-        except Exception:
-            path=None
+        path = dialogs_lib.escolher_arquivo(
+            "CSV de centroides (KiCad pos / genérico)",
+            initialdir=os.path.abspath(self.out_dir),
+            filetypes=[("CSV","*.csv *.txt"),("Todos","*.*")],
+        )
         if not path or not os.path.exists(path): return
         linhas=transform_lib.ler_centroides_csv(path)
         if not linhas:
@@ -1823,16 +1848,13 @@ class AppV101:
     def _exportar_kicad(self):
         if self.tab=='anotar' and self.right_mode=='edit': self._salvar_edicao()
         self._salvar_view_atual()
-        try:
-            import tkinter as tk
-            from tkinter import filedialog
-            root=tk.Tk(); root.withdraw(); root.attributes('-topmost',True)
-            path=filedialog.asksaveasfilename(title="Exportar KiCad PCB",initialdir=os.path.abspath(self.out_dir),
-                                              initialfile=self._nome_base_export()+'.kicad_pcb',defaultextension='.kicad_pcb',
-                                              filetypes=[("KiCad PCB","*.kicad_pcb"),("Todos","*.*")])
-            root.destroy()
-        except Exception:
-            path=None
+        path = dialogs_lib.salvar_arquivo(
+            "Exportar KiCad PCB",
+            initialdir=os.path.abspath(self.out_dir),
+            initialfile=self._nome_base_export()+'.kicad_pcb',
+            defaultextension='.kicad_pcb',
+            filetypes=[("KiCad PCB","*.kicad_pcb"),("Todos","*.*")],
+        )
         if not path: return
         try:
             res=kicad_lib.exportar_kicad(self.pads,self.componentes,self.nets,path,
@@ -1849,15 +1871,15 @@ class AppV101:
         pasta=os.path.join(os.path.abspath(self.out_dir),'gerber')
         try:
             os.makedirs(pasta,exist_ok=True)
-            import tkinter as tk
-            from tkinter import filedialog
-            root=tk.Tk(); root.withdraw(); root.attributes('-topmost',True)
-            path=filedialog.asksaveasfilename(title="Exportar Gerber (cobre)",initialdir=pasta,
-                                              initialfile=self._nome_base_export()+'.gbr',defaultextension='.gbr',
-                                              filetypes=[("Gerber","*.gbr *.gtl *.gbl *.ger"),("Todos","*.*")])
-            root.destroy()
         except Exception:
-            path=None
+            pass
+        path = dialogs_lib.salvar_arquivo(
+            "Exportar Gerber (cobre)",
+            initialdir=pasta,
+            initialfile=self._nome_base_export()+'.gbr',
+            defaultextension='.gbr',
+            filetypes=[("Gerber","*.gbr *.gtl *.gbl *.ger"),("Todos","*.*")],
+        )
         if not path: return
         try:
             res=kicad_lib.exportar_gerber(self.pads,path,self.mm_por_px,self.w0,self.h0,self._lado_da_view())
@@ -1868,17 +1890,13 @@ class AppV101:
         self._flash(msg,cor=(0,220,120) if res['pads'] else (255,180,0),dur=5.0)
 
     def _importar_pcb(self):
-        try:
-            import tkinter as tk
-            from tkinter import filedialog
-            root=tk.Tk(); root.withdraw(); root.attributes('-topmost',True)
-            path=filedialog.askopenfilename(title="Importar KiCad / Eagle / Gerber",initialdir=os.path.abspath(self.out_dir),
-                                            filetypes=[("PCB (KiCad/Eagle/Gerber)","*.kicad_pcb *.brd *.gbr *.ger *.gtl *.gbl *.art"),
-                                                       ("KiCad","*.kicad_pcb"),("Eagle","*.brd"),("Gerber","*.gbr *.ger *.gtl *.gbl *.art"),
-                                                       ("Todos","*.*")])
-            root.destroy()
-        except Exception:
-            path=None
+        path = dialogs_lib.escolher_arquivo(
+            "Importar KiCad / Eagle / Gerber",
+            initialdir=os.path.abspath(self.out_dir),
+            filetypes=[("PCB (KiCad/Eagle/Gerber)","*.kicad_pcb *.brd *.gbr *.ger *.gtl *.gbl *.art"),
+                       ("KiCad","*.kicad_pcb"),("Eagle","*.brd"),("Gerber","*.gbr *.ger *.gtl *.gbl *.art"),
+                       ("Todos","*.*")],
+        )
         if not path or not os.path.exists(path): return
         try:
             res=kicad_lib.importar_arquivo(path,self.w0,self.h0,self.mm_por_px)
@@ -1915,6 +1933,121 @@ class AppV101:
         extra=f", {len(res['componentes'])} comps, {len(res['nets'])} nets" if res['componentes'] else ''
         self._flash(f"{res['formato'].upper()}: {len(ids)} pads importados{extra}",cor=(0,220,120),dur=4.5)
 
+    # ==================== DIFF VIEWER (frente x verso) ====================
+
+    def _tem_duas_visoes_com_imagem(self):
+        """Retorna True se pelo menos 2 visões têm imagem definida."""
+        cont=0
+        for c,_,_ in self.views_disponiveis:
+            vd=self.views_store.get(c) or {}
+            caminho=vd.get('img_path')
+            if caminho:
+                caminho=self._resolver_img_sessao(caminho,self.out_dir)
+                if caminho and os.path.exists(caminho):
+                    cont+=1
+        return cont>=2
+
+    def _carregar_imagem_view(self, view):
+        """Carrega a imagem de uma visão (frente/verso/conector) e retorna (img, caminho)."""
+        vd=self.views_store.get(view) or {}
+        caminho=vd.get('img_path')
+        if not caminho:
+            caminho=self._auto_imagem_view(view)
+        if not caminho:
+            caminho=self._perguntar_imagem_view(view)
+        if not caminho or not os.path.exists(caminho):
+            return None, None
+        caminho=self._resolver_img_sessao(caminho, self.out_dir)
+        img=ler_imagem(caminho)
+        return img, caminho
+
+    def _obter_pads_view(self, view):
+        """Retorna os pads de uma visão (lista) ou []."""
+        vd=self.views_store.get(view) or {}
+        return vd.get('pads') or []
+
+    def _toggle_diff(self):
+        """Ativa/desativa o modo diff viewer."""
+        if not self._tem_duas_visoes_com_imagem():
+            self._flash("Diff precisa de 2 visões com imagem (ex: frente + verso). Use [6] Foto da Visão.",cor=(255,180,0),dur=4.0)
+            return
+        self.modo_diff=not self.modo_diff
+        if self.modo_diff:
+            self.right_mode='menu'  # fecha painéis laterais para focar no canvas
+            self._recalcular_diff()
+            self._flash("DIFF ligado: comparando frente x verso",cor=(0,220,120),dur=3.0)
+        else:
+            self._flash("DIFF desligado",cor=(160,160,170),dur=2.0)
+
+    def _toggle_diff_lado_a_lado(self):
+        self.diff_side_by_side=True
+        self.diff_precisa_recalcular=False
+        self._flash("Diff: lado a lado",cor=(0,200,255),dur=2.0)
+
+    def _toggle_diff_sobreposto(self):
+        self.diff_side_by_side=False
+        self.diff_precisa_recalcular=False
+        self._flash("Diff: sobreposto",cor=(0,200,255),dur=2.0)
+
+    def _recalcular_diff(self):
+        """Recalcula o diff entre a visão de referência e a alvo."""
+        if not self._tem_duas_visoes_com_imagem():
+            self._flash("Diff: defina imagem em 2 visões antes",cor=(255,180,0),dur=3.0); return
+        img_a, _ = self._carregar_imagem_view(self.diff_view_ref)
+        img_b, _ = self._carregar_imagem_view(self.diff_view_alvo)
+        if img_a is None or img_b is None:
+            self._flash("Diff: não foi possível carregar as imagens",cor=(255,0,0),dur=3.0); return
+        try:
+            self.diff_result=diff_lib.calcular_diff(img_a, img_b, threshold=self.diff_threshold,
+                                                    escala_mm_por_px=self.mm_por_px)
+            self.diff_precisa_recalcular=False
+            r=self.diff_result
+            self._flash(f"Diff calculado: {r.pct_diff:.1f}% diferente | inliers: {r.score} | espelhado: {'sim' if r.espelhado else 'não'}",cor=(0,220,120),dur=4.0)
+        except Exception as e:
+            self._flash(f"Diff: falha ao calcular ({e})",cor=(255,0,0),dur=3.5)
+
+    def _render_diff(self, canvas):
+        """Desenha o diff viewer no canvas (substitui a imagem simples)."""
+        if self.diff_precisa_recalcular or self.diff_result is None:
+            self._recalcular_diff()
+        res=self.diff_result
+        if res is None:
+            return
+        pads_a=self._obter_pads_view(self.diff_view_ref)
+        pads_b=self._obter_pads_view(self.diff_view_alvo)
+        w_max=self._canvas_w()-40
+        if self.diff_side_by_side:
+            img_diff=diff_lib.desenhar_diff_lado_a_lado(res, pads_a, pads_b, w_max=w_max)
+        else:
+            img_diff=diff_lib.desenhar_diff_sobreposto(res, pads_a, pads_b, alpha=self.diff_alpha, w_max=w_max)
+        # Centraliza o diff no canvas (área de desenho, abaixo da toolbar)
+        canvas_w=self._canvas_w()
+        canvas_h=self.view_h-40
+        dh, dw = img_diff.shape[:2]
+        escala=min(canvas_w/dw, canvas_h/dh, 1.0)
+        nw, nh=max(1,int(dw*escala)), max(1,int(dh*escala))
+        pequena=cv2.resize(img_diff,(nw,nh),interpolation=cv2.INTER_AREA)
+        x0=(canvas_w-nw)//2+self._cx0()
+        y0=(canvas_h-nh)//2+40
+        if 0<=y0 and y0+nh<=self.view_h and 0<=x0 and x0+nw<=self.view_w:
+            canvas[y0:y0+nh, x0:x0+nw]=pequena
+            # barra de status do diff
+            txt=f"DIFF {self.diff_view_ref.upper()} vs {self.diff_view_alvo.upper()} | {res.pct_diff:.1f}% diferente | inliers {res.score} | limiar {self.diff_threshold}"
+            cv2.putText(canvas,_ascii(txt),(self._cx0()+8, y0+nh+20),cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,255,255),1,cv2.LINE_AA)
+        else:
+            self._flash("Diff: canvas muito pequeno para exibir",cor=(255,180,0),dur=2.5)
+
+    def _atualizar_estado_botoes_diff(self):
+        """Marca os botões DIFF ativos de acordo com o estado atual."""
+        for b in self.botoes_toolbar:
+            if b.key=='modo_diff':
+                b.ativo=self.modo_diff
+            elif b.key=='diff_lado_a_lado':
+                b.ativo=self.diff_side_by_side
+            elif b.key=='diff_sobreposto':
+                b.ativo=not self.diff_side_by_side
+
+
     def _detectar_tiles(self):
         p=self._params_from_sliders()
         t0=time.perf_counter()
@@ -1940,14 +2073,11 @@ class AppV101:
     def _comparar_ouro(self):
         vd=self.views_store.get(self.view_atual) or {}
         inicial=vd.get('ouro_path') or (os.path.dirname(self.img_path_original) if self.img_path_original else os.getcwd())
-        try:
-            import tkinter as tk
-            from tkinter import filedialog
-            root=tk.Tk(); root.withdraw(); root.attributes('-topmost',True)
-            ouro=filedialog.askopenfilename(title="Placa de referência (ouro)",initialdir=inicial if os.path.isdir(str(inicial)) else os.getcwd(),filetypes=[("Imagens","*.jpg *.jpeg *.png *.bmp *.tiff")])
-            root.destroy()
-        except Exception:
-            ouro=None
+        ouro = dialogs_lib.escolher_arquivo(
+            "Placa de referência (ouro)",
+            initialdir=inicial if os.path.isdir(str(inicial)) else os.getcwd(),
+            filetypes=[("Imagens","*.jpg *.jpeg *.png *.bmp *.tiff")],
+        )
         if not ouro or not os.path.exists(ouro): return
         vd['ouro_path']=ouro; self.views_store[self.view_atual]=vd
         try:
@@ -1993,15 +2123,14 @@ class AppV101:
         linhas=self._pinagem_conector(comp)
         if not linhas:
             self._flash("Conector sem pads vinculados",cor=(255,100,0),dur=2.0); return
-        try:
-            import tkinter as tk
-            from tkinter import filedialog
-            root=tk.Tk(); root.withdraw(); root.attributes('-topmost',True)
-            nome=f"pinagem_{comp.get('nome','conector')}.csv"
-            destino=filedialog.asksaveasfilename(title="Salvar pinagem CSV",initialdir=os.path.abspath(self.out_dir),initialfile=nome,defaultextension='.csv',filetypes=[("CSV","*.csv")])
-            root.destroy()
-        except Exception:
-            destino=None
+        nome=f"pinagem_{comp.get('nome','conector')}.csv"
+        destino = dialogs_lib.salvar_arquivo(
+            "Salvar pinagem CSV",
+            initialdir=os.path.abspath(self.out_dir),
+            initialfile=nome,
+            defaultextension='.csv',
+            filetypes=[("CSV","*.csv")],
+        )
         if not destino: return
         try:
             import csv as _csv
@@ -2296,65 +2425,102 @@ class AppV101:
 
     def _abrir_projeto_dialog(self):
         """Janela com a lista de projetos de placa encontrados + escolha de pasta manual."""
-        try:
+        projetos = self._listar_projetos()
+        recentes = [os.path.abspath(p) for p in (self.prefs.get('recentes') or []) if os.path.isdir(str(p))]
+
+        def _ordem_recente(p):
+            rp = os.path.normcase(os.path.abspath(p['pasta']))
+            for i, r in enumerate(recentes):
+                if os.path.normcase(r) == rp:
+                    return (0, i)
+            return (1, 0)
+        projetos.sort(key=_ordem_recente)
+
+        if dialogs_lib._disponivel():
             import tkinter as tk
             from tkinter import filedialog
-        except Exception as e:
-            self._flash(f"Tkinter indisponível: {e}",cor=(255,0,0),dur=2.5); return
-        projetos=self._listar_projetos()
-        recentes=[os.path.abspath(p) for p in (self.prefs.get('recentes') or []) if os.path.isdir(str(p))]
-        def _ordem_recente(p):
-            rp=os.path.normcase(os.path.abspath(p['pasta']))
-            for i,r in enumerate(recentes):
-                if os.path.normcase(r)==rp: return (0,i)
-            return (1,0)
-        projetos.sort(key=_ordem_recente)
-        escolhido={'pasta':None}
-        root=tk.Tk(); root.title("Abrir Projeto de Placa"); root.attributes('-topmost',True); root.resizable(False,False)
-        w,h=780,440
-        try:
-            sx,sy=root.winfo_screenwidth(),root.winfo_screenheight()
-            root.geometry(f"{w}x{h}+{max(0,(sx-w)//2)}+{max(0,(sy-h)//3)}")
-        except Exception: root.geometry(f"{w}x{h}")
-        tk.Label(root,text=f"Projetos em: {self.pasta_projetos or os.getcwd()}   (★ recente · [NOVO] = pasta com fotos)",anchor='w').pack(fill='x',padx=10,pady=(10,2))
-        frame=tk.Frame(root); frame.pack(fill='both',expand=True,padx=10)
-        sb=tk.Scrollbar(frame,orient='vertical')
-        lb=tk.Listbox(frame,yscrollcommand=sb.set,activestyle='dotbox',font=('Consolas',10)); sb.config(command=lb.yview)
-        lb.pack(side='left',fill='both',expand=True); sb.pack(side='right',fill='y')
+            escolhido = {'pasta': None}
+            root = tk.Tk(); root.title("Abrir Projeto de Placa"); root.attributes('-topmost', True); root.resizable(False, False)
+            w, h = 780, 440
+            try:
+                sx, sy = root.winfo_screenwidth(), root.winfo_screenheight()
+                root.geometry(f"{w}x{h}+{max(0, (sx - w) // 2)}+{max(0, (sy - h) // 3)}")
+            except Exception:
+                root.geometry(f"{w}x{h}")
+            tk.Label(root, text=f"Projetos em: {self.pasta_projetos or os.getcwd()}   (★ recente · [NOVO] = pasta com fotos)", anchor='w').pack(fill='x', padx=10, pady=(10, 2))
+            frame = tk.Frame(root); frame.pack(fill='both', expand=True, padx=10)
+            sb = tk.Scrollbar(frame, orient='vertical')
+            lb = tk.Listbox(frame, yscrollcommand=sb.set, activestyle='dotbox', font=('Consolas', 10)); sb.config(command=lb.yview)
+            lb.pack(side='left', fill='both', expand=True); sb.pack(side='right', fill='y')
+            if projetos:
+                for p in projetos:
+                    rp = os.path.normcase(os.path.abspath(p['pasta']))
+                    estrela = '★ ' if any(os.path.normcase(r) == rp for r in recentes) else '  '
+                    novo = '[NOVO] ' if p.get('novo') else ''
+                    lb.insert('end', f"{estrela}{novo}{p['rotulo']}   |   {p['info']}")
+                lb.selection_set(0)
+            else:
+                lb.insert('end', '(nenhum projeto encontrado - use "Escolher pasta...")')
+            def abrir():
+                sel = lb.curselection()
+                if not sel or not projetos:
+                    return
+                escolhido['pasta'] = projetos[sel[0]]['pasta']; root.destroy()
+            def escolher_pasta():
+                d = filedialog.askdirectory(parent=root, title="Escolher pasta do projeto (sessão JSON, CSVs ou fotos)", initialdir=self.pasta_projetos or os.path.abspath(self.out_dir))
+                if d:
+                    escolhido['pasta'] = d; root.destroy()
+            def definir_pasta():
+                d = filedialog.askdirectory(parent=root, title="Pasta de projetos (workspace)", initialdir=self.pasta_projetos or os.getcwd())
+                if d:
+                    self.pasta_projetos = os.path.abspath(d)
+                    self.prefs['pasta_projetos'] = self.pasta_projetos; self._salvar_prefs()
+                    root.destroy()
+                    self._flash(f"Pasta de projetos: {self.pasta_projetos}", cor=(0, 220, 120), dur=2.5)
+                    self._abrir_projeto_dialog()
+            bar = tk.Frame(root); bar.pack(fill='x', padx=10, pady=10)
+            tk.Button(bar, text="Abrir", width=12, default='active', command=abrir).pack(side='left')
+            tk.Button(bar, text="Escolher pasta...", width=16, command=escolher_pasta).pack(side='left', padx=8)
+            tk.Button(bar, text="Pasta de projetos...", width=18, command=definir_pasta).pack(side='left')
+            tk.Button(bar, text="Cancelar", width=10, command=root.destroy).pack(side='right')
+            lb.bind('<Double-Button-1>', lambda e: abrir())
+            root.bind('<Return>', lambda e: abrir())
+            root.bind('<Escape>', lambda e: root.destroy())
+            root.mainloop()
+            if escolhido['pasta']:
+                self._abrir_projeto(escolhido['pasta'])
+            return
+
+        # --- Fallback sem tkinter (console) ---
+        print(f"\n=== ABRIR PROJETO (tkinter indisponível) ===")
+        print(f"Projetos em: {self.pasta_projetos or os.getcwd()}")
         if projetos:
-            for p in projetos:
-                rp=os.path.normcase(os.path.abspath(p['pasta']))
-                estrela='★ ' if any(os.path.normcase(r)==rp for r in recentes) else '  '
-                novo='[NOVO] ' if p.get('novo') else ''
-                lb.insert('end',f"{estrela}{novo}{p['rotulo']}   |   {p['info']}")
-            lb.selection_set(0)
+            for i, p in enumerate(projetos, 1):
+                estrela = '★ ' if any(os.path.normcase(r) == os.path.normcase(os.path.abspath(p['pasta'])) for r in recentes) else '  '
+                novo = '[NOVO] ' if p.get('novo') else ''
+                print(f"  {i}. {estrela}{novo}{p['rotulo']}  |  {p['info']}  |  {p['pasta']}")
         else:
-            lb.insert('end','(nenhum projeto encontrado - use "Escolher pasta...")')
-        def abrir():
-            sel=lb.curselection()
-            if not sel or not projetos: return
-            escolhido['pasta']=projetos[sel[0]]['pasta']; root.destroy()
-        def escolher_pasta():
-            d=filedialog.askdirectory(parent=root,title="Escolher pasta do projeto (sessão JSON, CSVs ou fotos)",initialdir=self.pasta_projetos or os.path.abspath(self.out_dir))
-            if d: escolhido['pasta']=d; root.destroy()
-        def definir_pasta():
-            d=filedialog.askdirectory(parent=root,title="Pasta de projetos (workspace)",initialdir=self.pasta_projetos or os.getcwd())
+            print("  (nenhum projeto encontrado)")
+        print("  0. Escolher pasta manualmente")
+        print("  q. Cancelar")
+        try:
+            escolha = input("Escolha um número: ").strip()
+        except EOFError:
+            return
+        if escolha.lower() in ('q', ''):
+            return
+        if escolha == '0':
+            d = dialogs_lib.escolher_pasta("Escolher pasta do projeto", initialdir=self.pasta_projetos or os.path.abspath(self.out_dir))
             if d:
-                self.pasta_projetos=os.path.abspath(d)
-                self.prefs['pasta_projetos']=self.pasta_projetos; self._salvar_prefs()
-                root.destroy()
-                self._flash(f"Pasta de projetos: {self.pasta_projetos}",cor=(0,220,120),dur=2.5)
-                self._abrir_projeto_dialog()
-        bar=tk.Frame(root); bar.pack(fill='x',padx=10,pady=10)
-        tk.Button(bar,text="Abrir",width=12,default='active',command=abrir).pack(side='left')
-        tk.Button(bar,text="Escolher pasta...",width=16,command=escolher_pasta).pack(side='left',padx=8)
-        tk.Button(bar,text="Pasta de projetos...",width=18,command=definir_pasta).pack(side='left')
-        tk.Button(bar,text="Cancelar",width=10,command=root.destroy).pack(side='right')
-        lb.bind('<Double-Button-1>',lambda e: abrir())
-        root.bind('<Return>',lambda e: abrir())
-        root.bind('<Escape>',lambda e: root.destroy())
-        root.mainloop()
-        if escolhido['pasta']: self._abrir_projeto(escolhido['pasta'])
+                self._abrir_projeto(d)
+            return
+        try:
+            idx = int(escolha) - 1
+            if 0 <= idx < len(projetos):
+                self._abrir_projeto(projetos[idx]['pasta'])
+        except ValueError:
+            self._flash("Escolha invalida", cor=(255, 180, 0), dur=2.0)
+
     def _abrir_pasta_saida(self):
         try:
             import subprocess, platform
@@ -3117,7 +3283,7 @@ class AppV101:
         if not resultados:
             self._flash("Nenhum datasheet encontrado (conexao/termo)",cor=(255,100,0),dur=3.0); return
         escolhido={'url':None,'baixar':False}
-        try:
+        if dialogs_lib._disponivel():
             import tkinter as tk
             root=tk.Tk(); root.title(f"Datasheet - {termo}"); root.attributes('-topmost',True); root.resizable(False,False)
             root.geometry("860x380")
@@ -3143,8 +3309,26 @@ class AppV101:
             tk.Button(bar,text="Cancelar",width=10,command=root.destroy).pack(side='right')
             lb.bind('<Double-Button-1>',lambda e: abrir())
             root.mainloop()
-        except Exception as e:
-            self._flash(f"Janela de datasheet indisponivel: {e}",cor=(255,0,0),dur=2.5); return
+        else:
+            print(f"\n=== DATASHEET: {termo} ===")
+            for i, r in enumerate(resultados, 1):
+                tipo = 'PDF' if r['pdf'] else 'WEB'
+                print(f"  {i}. [{tipo}] {r['url']}")
+            print("  q. Cancelar / não baixar")
+            try:
+                escolha = input("Escolha um número para abrir (ou Enter p/ cancelar): ").strip()
+            except EOFError:
+                return
+            if escolha.lower() in ('q', ''):
+                return
+            try:
+                idx = int(escolha) - 1
+                if 0 <= idx < len(resultados):
+                    escolhido['url'] = resultados[idx]['url']
+                    escolhido['baixar'] = False  # no console, apenas abre
+            except ValueError:
+                self._flash("Escolha invalida", cor=(255, 180, 0), dur=2.0)
+                return
         if not escolhido['url']: return
         if escolhido['baixar']:
             import re as _re
@@ -3938,6 +4122,10 @@ class AppV101:
         elif key=='export_kicad': self._exportar_kicad()
         elif key=='export_gerber': self._exportar_gerber()
         elif key=='import_pcb': self._importar_pcb()
+        elif key=='modo_diff': self._toggle_diff()
+        elif key=='diff_lado_a_lado': self._toggle_diff_lado_a_lado()
+        elif key=='diff_sobreposto': self._toggle_diff_sobreposto()
+        elif key=='diff_recalcular': self._recalcular_diff()
         elif key=='detectar_tiles': self._detectar_tiles()
         elif key=='regua': self._iniciar_regua()
         elif key=='comparar_ouro': self._comparar_ouro()
@@ -4058,17 +4246,13 @@ class AppV101:
         if self.img is None:
             self._flash("Carregue uma imagem primeiro", cor=(255,100,0), dur=2.0)
             return
+        ouro = dialogs_lib.escolher_arquivo(
+            "Selecione a PLACA OURO (referência boa)",
+            filetypes=[("Imagens","*.jpg *.jpeg *.png *.bmp *.tiff"),("Todos","*.*")],
+        )
+        if not ouro:
+            return
         try:
-            import tkinter as tk
-            from tkinter import filedialog
-            root=tk.Tk(); root.withdraw(); root.attributes('-topmost',True)
-            ouro=filedialog.askopenfilename(
-                title="Selecione a PLACA OURO (referência boa)",
-                filetypes=[("Imagens","*.jpg *.jpeg *.png *.bmp *.tiff"),("Todos","*.*")],
-            )
-            root.destroy()
-            if not ouro:
-                return
             teste_path=self.img_path_original
             if not teste_path or not os.path.exists(teste_path):
                 self._flash("Imagem atual não encontrada em disco", cor=(255,0,0), dur=2.0)
@@ -4237,13 +4421,17 @@ class AppV101:
             if b.key=='f_manual' and self.filter_tipo=='manual': b.ativo=True
             if b.key=='toggle_estado': b.ativo=(self.estado_placa=='ligada')
             b.draw(canvas,self.font_scale)
+        self._atualizar_estado_botoes_diff()
         # rail vertical de ferramentas (estilo editor de imagens)
         self._layout_rail(); self._draw_rail(canvas)
         # FIX v11: base_scale não recalcula todo frame - preserva zoom
         s_fit=self.base_scale # mantem base
         oy_off=self._oy_off()
         ox0=max(0,int(-self.pan_x/(self.base_scale*self.zoom))); oy0=max(0,int(-self.pan_y/(self.base_scale*self.zoom))); ox1=min(self.w0,int((self._canvas_w()-self.pan_x)/(self.base_scale*self.zoom))+1); oy1=min(self.h0,int((self.view_h-40-oy_off-self.pan_y)/(self.base_scale*self.zoom))+1)
-        if ox1>ox0 and oy1>oy0:
+        # -------------------- MODO DIFF (frente x verso) --------------------
+        if self.modo_diff and self.diff_result is not None:
+            self._render_diff(canvas)
+        elif ox1>ox0 and oy1>oy0:
             crop=self.img[oy0:oy1,ox0:ox1]; tw=int((ox1-ox0)*self.base_scale*self.zoom); th=int((oy1-oy0)*self.base_scale*self.zoom)
             if tw>0 and th>0:
                 scaled=cv2.resize(crop,(tw,th),interpolation=cv2.INTER_AREA); px=max(self._cx0(),int(ox0*self.base_scale*self.zoom+self.pan_x+self._cx0())); py=max(oy_off,int(oy0*self.base_scale*self.zoom+self.pan_y+oy_off)); cw=min(tw,self.left_w-px); ch=min(th,self.view_h-40-py)

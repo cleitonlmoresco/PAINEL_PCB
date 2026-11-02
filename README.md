@@ -244,6 +244,18 @@ corrigiu os seguintes bugs:
 - `Ctrl+K` → "Auto-vincular pads passantes (on/off)" desliga/liga
 - Navegação: **◀ ▶** ao lado das visões ou teclas **`,`** e **`.`**
 
+## Diff viewer: frente ↔ verso com heatmap (v11.8)
+- Botão **Diff frente x verso** (grupo `DIFF` na barra de opções): compara duas
+  visões da mesma placa alinhando-as por ORB+RANSAC e gerando um mapa de
+  diferença + heatmap (COLORMAP_JET).
+- **Lado a lado**: mostra frente | verso com pads em verde (ref) e azul (alvo).
+- **Sobreposto**: sobrepõe o heatmap de diferença na imagem da referência.
+- Opções: `Recalcular` (executa o alinhamento/cálculo novamente) e ajuste de
+  limiar de diferença. Requer imagem cadastrada em pelo menos 2 visões
+  (use [6] Foto da Visão).
+- Útil para encontrar pads ausentes, desalinhados ou oxidadas entre as faces
+  da placa.
+
 ## Componente: marcação, pino 1 e datasheet (v11.2)
 - No editor do componente, preencha a **Marcação** (código impresso, ex: `BC547`)
 - **PINO 1**: clique no pad correspondente na placa e depois em `Pino 1` — o app

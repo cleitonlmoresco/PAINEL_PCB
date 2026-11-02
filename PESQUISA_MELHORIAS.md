@@ -242,7 +242,7 @@ Faltando:
 - [ ] Formato MessagePack v2 com schema
 - [ ] Import KiCad/Eagle/Gerber
 - [ ] Export Netlist KiCad + BOM CSV
-- [ ] Diff viewer frente/verso + heatmap
+- [x] Diff viewer frente/verso + heatmap
 
 ### Sprint 9-10 (Semanas 17-20): IA Avançada
 - [x] Active Learning loop (validação → fine-tune LoRA 5 min)
