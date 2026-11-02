@@ -429,7 +429,8 @@ class AppV101:
 
     _MODO_DA_RAIL={'modo_nav':'navegar','modo_add':'adicionar','modo_move':'mover','modo_del':'remover',
                    'modo_med':'medir','modo_con':'conectar','modo_descon':'desconectar',
-                   'modo_anot':'anotacao','modo_pino':'pino','modo_gnd':'gnd','modo_comp':'componente'}
+                   'modo_anot':'anotacao','modo_pino':'pino','modo_gnd':'gnd','modo_comp':'componente',
+                   'modo_al_validar':'validar_al'}
 
     def _rail_grupos(self):
         if self.tab=='calibrar':
@@ -438,12 +439,13 @@ class AppV101:
             [('modo_nav','NAV','Navegar'),('modo_med','MED','Medir')],
             [('modo_add','ADD','Adicionar'),('modo_del','DEL','Remover'),('modo_con','CON','Conectar'),('modo_descon','DES','Descon.')],
             [('modo_anot','TXT','Anotar'),('modo_pino','PIN','Pino'),('modo_gnd','GND','GND'),('modo_comp','CMP','Comp.')],
+            [('modo_al_validar','VAL','Validar AL')],
         ]
 
     def _layout_rail(self):
         """Rail vertical de ferramentas (estilo Photoshop/Affinity)."""
         self.rail_btns=[]
-        x=5; w=max(44,self._cx0()-10); h=40; gap=3; grupo_gap=7
+        x=5; w=max(44,self._cx0()-10); h=36; gap=2; grupo_gap=5
         y=self._toolbar_h()+10
         for grupo in self._rail_grupos():
             for key,icon,label in grupo:
@@ -474,9 +476,9 @@ class AppV101:
             draw_rounded_rect(canvas,rx,ry,rw,rh,7,bg,-1)
             draw_rounded_rect(canvas,rx,ry,rw,rh,7,(0,0,0),1,bd)
             (iw,ih),_=cv2.getTextSize(icon,cv2.FONT_HERSHEY_SIMPLEX,0.32,1)
-            cv2.putText(canvas,icon,(rx+(rw-iw)//2,ry+18),cv2.FONT_HERSHEY_SIMPLEX,0.32,fg,1,cv2.LINE_AA)
+            cv2.putText(canvas,icon,(rx+(rw-iw)//2,ry+16),cv2.FONT_HERSHEY_SIMPLEX,0.32,fg,1,cv2.LINE_AA)
             (lw,lh),_=cv2.getTextSize(label,cv2.FONT_HERSHEY_SIMPLEX,0.19,1)
-            cv2.putText(canvas,label,(rx+(rw-lw)//2,ry+32),cv2.FONT_HERSHEY_SIMPLEX,0.19,fg,1,cv2.LINE_AA)
+            cv2.putText(canvas,label,(rx+(rw-lw)//2,ry+28),cv2.FONT_HERSHEY_SIMPLEX,0.19,fg,1,cv2.LINE_AA)
 
     def _rebuild_toolbar(self):
         if self._last_tab==self.tab and self.botoes_toolbar: return
@@ -491,6 +493,7 @@ class AppV101:
             grupos=[
                 ("COMPONENTES",[("Datasheet",'comp_datasheet','action'),("Auto pino 1",'comp_auto_pino1','action'),("Reconhecer",'comp_reconhecer','action'),("Numerar",'pin_numerar','action')]),
                 ("PAD",[("Editar",'editar','action'),("Duplicar",'duplicar','action'),("Isolar",'isolar','action')]),
+                ("ACTIVE LEARNING",[("Validar AL",'modo_al_validar','action'),("Pseudo-Label",'al_pseudo','action'),("Treinar LoRA",'al_train','action')]),
                 ("VISAO",[("Familias",'familias','toggle'),("Camadas",'camadas','toggle'),("IDs",'toggle_ids','toggle'),("Mira",'toggle_mira','toggle')]),
                 ("FILTROS",[("Todos",'f_todos','filter'),("OK",'f_ok','filter'),("SUSP",'f_susp','filter'),("FALHA",'f_falha','filter'),("Sem medir",'f_vazio','filter'),("Buscar",'buscar','action')]),
                 ("PLACA",[("LIG/DESL",'toggle_estado','toggle')]),
@@ -1900,12 +1903,144 @@ class AppV101:
         except Exception as e:
             self._flash(f"Erro ao salvar: {e}",cor=(255,0,0),dur=2.5)
 
-    def _comp_handle_at(self,comp,x,y):
-        x1,y1=self._orig_to_disp(comp['x1'],comp['y1']); x2,y2=self._orig_to_disp(comp['x2'],comp['y2']); oy=self._oy_off()
-        y1+=oy; y2+=oy
-        for nome,(hx,hy) in (('tl',(x1,y1)),('tr',(x2,y1)),('bl',(x1,y2)),('br',(x2,y2))):
-            if abs(x-hx)<=9 and abs(y-hy)<=9: return nome
-        return None
+    # ==================== ACTIVE LEARNING METHODS ====================
+
+    def _gerar_pseudo_labels(self):
+        """Gera pseudo-labels para detecções de alta confiança."""
+        from core.active_learning import PseudoLabeler, ActiveLearningConfig, DetectionResult
+        
+        # Filtrar pads automáticos com alta confiança
+        pads_auto = [p for p in self.pads if not p.get('manual', False) and p.get('score', 0) >= 0.8]
+        
+        if not pads_auto:
+            self._flash("Nenhum pad automático com confiança >= 0.8",cor=(255,180,0),dur=3.0)
+            return
+        
+        config = ActiveLearningConfig(pseudo_label_confidence=0.8)
+        labeler = PseudoLabeler(config)
+        
+        # Converter pads para DetectionResult
+        preds = []
+        for p in pads_auto:
+            pred = type('obj', (object,), {
+                'bbox': (p['cx'], p['cy'], p['w'], p['h']),
+                'confidence': p.get('score', 0.5),
+                'class_id': p.get('class_id', 0),
+                'uncertainty': 1.0 - p.get('score', 0.5),
+                'uncertainties_per_class': np.array([]),
+                'entropy': 1.0 - p.get('score', 0.5),
+                'margin': p.get('score', 0.5),
+                'image_path': self.img_path_original,
+                'image_shape': (self.h0, self.w0)
+            })()
+            preds.append(pred)
+        
+        pseudo_labels = labeler.generate(preds, [])
+        
+        if not pseudo_labels:
+            self._flash("Nenhum pseudo-label gerado (confiança < 0.8)",cor=(255,180,0),dur=3.0)
+            return
+        
+        # Converter pseudo-labels para anotações
+        from core.active_learning import LabeledSample
+        count = 0
+        for pl in pseudo_labels:
+            # Verificar se já existe anotação próxima
+            existe = False
+            for a in self.anotacoes:
+                if abs(a['x'] - pl.bbox[0]*self.w0) < 20 and abs(a['y'] - pl.bbox[1]*self.h0) < 20:
+                    existe = True
+                    break
+            if not existe:
+                self.anotacoes.append({
+                    'id': self.next_anot_id,
+                    'x': int(pl.bbox[0] * self.w0),
+                    'y': int(pl.bbox[1] * self.h0),
+                    'text': "AL:%d:%.2f" % (pl.class_id, pl.confidence),
+                    'cor': (255, 200, 0)
+                })
+                self.next_anot_id += 1
+                count += 1
+        
+        self._marcar_dirty()
+        self._flash("Pseudo-labels gerados: %d" % count,cor=(0,220,120),dur=3.0)
+
+    def _treinar_modelo_al(self):
+        """Inicia fine-tuning LoRA com dados rotulados (humanos + pseudo)."""
+        if not hasattr(self, 'labeled_samples') or not self.labeled_samples:
+            # Coletar labels das anotações existentes
+            self._coletar_labels_anotacoes()
+        
+        if not hasattr(self, 'labeled_samples') or len(self.labeled_samples) < 5:
+            self._flash("Poucos dados rotulados (min 5). Gere pseudo-labels ou anote manualmente.",cor=(255,180,0),dur=4.0)
+            return
+        
+        try:
+            import random
+            from core.active_learning import LoRAFineTuner, ActiveLearningConfig
+            config = ActiveLearningConfig(finetune_epochs=5)
+            tuner = LoRAFineTuner(config)
+            
+            # Preparar dados
+            train_samples = self.labeled_samples
+            random.shuffle(train_samples)
+            split = int(0.9 * len(train_samples))
+            train_data = train_samples[:split]
+            val_data = train_samples[split:]
+            
+            self._flash("Iniciando fine-tuning LoRA...",cor=(0,200,255),dur=3.0)
+            
+            def progress_cb(epoch, loss, metrics):
+                self._flash(f"Epoch {epoch+1}: loss={loss:.4f}, val_loss={metrics.get('val_loss', 0):.4f}",cor=(0,200,255),dur=2.0)
+            
+            new_model = tuner.train(
+                self.modelo_ia or 'models/pads.onnx',
+                train_data, val_data,
+                progress_callback=progress_cb
+            )
+            
+            if new_model:
+                self.modelo_ia = new_model
+                self.detector_modo = 'ia'
+                self._flash(f"Modelo atualizado: {os.path.basename(new_model)}",cor=(0,220,120),dur=3.0)
+            else:
+                self._flash("Fine-tuning falhou",cor=(255,0,0),dur=3.0)
+                
+        except Exception as e:
+            self._flash(f"Erro no fine-tuning: {e}",cor=(255,0,0),dur=4.0)
+
+    def _coletar_labels_anotacoes(self):
+        """Converte anotações em LabeledSample para treino."""
+        from core.active_learning import LabeledSample
+        self.labeled_samples = []
+        for a in self.anotacoes:
+            if a.get('text', '').startswith('AL:'):
+                # Pseudo-label
+                parts = a['text'][3:].split(':')
+                if len(parts) >= 2:
+                    try:
+                        class_id = int(parts[0])
+                        conf = float(parts[1])
+                        self.labeled_samples.append(LabeledSample(
+                            image_path=self.img_path_original,
+                            bbox=(a['x']/self.w0, a['y']/self.h0, 0.1, 0.1),
+                            class_id=class_id,
+                            is_pseudo=True,
+                            confidence=conf,
+                            annotator="pseudo"
+                        ))
+                    except:
+                        pass
+            else:
+                # Anotação manual
+                self.labeled_samples.append(LabeledSample(
+                    image_path=self.img_path_original,
+                    bbox=(a['x']/self.w0, a['y']/self.h0, 0.1, 0.1),
+                    class_id=0,
+                    is_pseudo=False,
+                    confidence=1.0,
+                    annotator="human"
+                ))
 
     def _girar_componente(self,comp):
         x1,y1,x2,y2=comp['x1'],comp['y1'],comp['x2'],comp['y2']
@@ -3749,9 +3884,13 @@ class AppV101:
             self.mode='gnd'; self.right_mode='inspetor'
             self._flash("GND: clique num pad para marcar/desmarcar o terra",cor=(0,220,120),dur=3.0)
         elif key=='pin_numerar': self._numerar_pinos_componente()
-        elif key=='toggle_mira':
-            self.mostrar_mira=not self.mostrar_mira; self._salvar_prefs()
-            self._flash(f"Mira de precisao: {'ON' if self.mostrar_mira else 'OFF'}",cor=(0,200,255),dur=1.8)
+        elif key=='modo_al_validar':
+            self.mode='validar_al'; self.right_mode='inspetor'
+            self._flash("VALIDAR AL: clique em pseudo-label para aprovar/rejeitar; clique em vazio para criar novo",cor=(0,220,255),dur=3.5)
+        elif key=='al_pseudo':
+            self._gerar_pseudo_labels()
+        elif key=='al_train':
+            self._treinar_modelo_al()
         elif key=='anot_limpar': self._limpar_anotacoes()
         elif key=='sidebar':
             if self.right_mode=='menu':

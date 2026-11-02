@@ -176,6 +176,9 @@ class Sidebar:
             b('[E]', 'Editar medicao', 'Abre o editor do pad selecionado (E)', 'editar', 'action'),
             b('[+]', 'Proximo pendente', 'Salva e abre o proximo pad sem medir (Ctrl+N)', 'prox_pendente', 'action'),
             b('[+]', 'Mira', 'Liga/desliga a mira de precisao', 'toggle_mira', 'toggle'),
+            b('[V]', 'Validar AL', 'Modo validacao Active Learning: aprova/rejeita pseudo-labels', 'modo_al_validar', 'mode'),
+            b('[P]', 'Pseudo-Label', 'Gera pseudo-labels automaticos (conf > 0.8)', 'al_pseudo', 'action'),
+            b('[T]', 'Treinar LoRA', 'Fine-tuning LoRA do modelo IA com labels atuais', 'al_train', 'action'),
         ]))
         self.sections.append(('DETECCAO', [
             b('[D]', 'Detectar', 'Roda a deteccao automatica (D)', 'detectar', 'success'),
