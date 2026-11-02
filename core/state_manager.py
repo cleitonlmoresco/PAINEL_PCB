@@ -1,9 +1,10 @@
 """Gerenciador de estado centralizado - extraído de AppV101 para desacoplar lógica de UI."""
 from __future__ import annotations
-from __future__ import annotations
+
 import copy
 import json
 import os
+import sys
 import time
 import uuid
 from pathlib import Path
