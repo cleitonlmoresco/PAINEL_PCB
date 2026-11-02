@@ -121,6 +121,13 @@ jobs:
           python -m PyInstaller --noconfirm --clean --onefile `
             --name AnotadorPad `
             --paths . `
+            --exclude-module torch --exclude-module torchvision --exclude-module torchaudio `
+            --exclude-module ultralytics --exclude-module loralib `
+            --exclude-module matplotlib --exclude-module pandas --exclude-module scipy `
+            --exclude-module sympy --exclude-module networkx --exclude-module numba `
+            --exclude-module IPython --exclude-module notebook `
+            --exclude-module tkinter --exclude-module PyQt5 --exclude-module PySide6 `
+            --exclude-module tensorflow --exclude-module transformers `
             --hidden-import detector_anomalias `
             --hidden-import anomalias_modulo `
             --hidden-import core.dataset `

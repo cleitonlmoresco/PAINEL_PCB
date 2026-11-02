@@ -202,7 +202,7 @@ views:
 
 ### 6. TESTES & QUALIDADE
 
-**Atual:** 40 testes pytest (smoke, units, detector, regressão)
+**Atual:** 46 testes pytest (smoke, units, detector, regressão, active learning)
 
 **Cobertura gaps:**
 ```
@@ -221,15 +221,15 @@ Faltando:
 ## PLANO DE EXECUÇÃO SUGERIDO (12 MESES)
 
 ### Sprint 1-2 (Semanas 1-4): Fundação & Estabilidade
-- [ ] C1, C2, C3, C4 (backups, validação, undo atômico, prefs schema)
-- [ ] M2, M3 (config YAML + logging estruturado)
-- [ ] Refatorar `AppV101` → `StateManager` + `Renderer` + `InputHandler`
-- [ ] CI: pytest + coverage + mypy + ruff + mutmut (baseline)
+- [x] C1, C2, C3, C4 (backups, validação, undo atômico, prefs schema)
+- [x] M2, M3 (config YAML + logging estruturado)
+- [x] Refatorar `AppV101` → `StateManager` (Renderer/InputHandler pendentes)
+- [x] CI: pytest + coverage + ruff (gate objetivo); mypy informativo; mutmut pendente
 
 ### Sprint 3-4 (Semanas 5-8): Detecção v2.0
 - [ ] Ensemble Smart+IA (weighted NMS)
 - [ ] Tiling adaptativo (densidade baseada)
-- [ ] Active Learning: validação → pseudo-label → fine-tune LoRA
+- [x] Active Learning: validação → pseudo-label → fine-tune LoRA
 - [ ] Métricas: PR curve, AP@0.5, inference time
 
 ### Sprint 5-6 (Semanas 9-12): GPU & Performance
@@ -245,14 +245,14 @@ Faltando:
 - [ ] Diff viewer frente/verso + heatmap
 
 ### Sprint 9-10 (Semanas 17-20): IA Avançada
-- [ ] Active Learning loop (validação → fine-tune LoRA 5 min)
+- [x] Active Learning loop (validação → fine-tune LoRA 5 min)
 - [ ] Ensemble Smart+IA (weighted NMS)
 - [ ] SAM adapter (few-shot 10-20 shots)
 - [ ] Multi-class: pad/via/fiducial/mounting/test_point
 
 ### Sprint 11-12 (Semanas 21-24): Ecossistema & Entrega
 - [ ] Plugin system (entry-points)
-- [ ] CLI unificado (`anotador train|detect|export|convert`)
+- [x] CLI unificado (`anotador train|detect|export|convert`)
 - [ ] WebAssembly demo (pyodide)
 - [ ] Documentação mkdocs + i18n PT/EN
 - [ ] Release v12.0

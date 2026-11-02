@@ -1977,7 +1977,10 @@ class AppV101:
         
         try:
             import random
-            from core.active_learning import LoRAFineTuner, ActiveLearningConfig
+            from core.active_learning import TORCH_AVAILABLE, LoRAFineTuner, ActiveLearningConfig
+            if not TORCH_AVAILABLE:
+                self._flash("Fine-tuning precisa de PyTorch (pip install torch). No EXE use os pseudo-labels.",cor=(255,180,0),dur=4.5)
+                return
             config = ActiveLearningConfig(finetune_epochs=5)
             tuner = LoRAFineTuner(config)
             

@@ -148,8 +148,11 @@ python main.py imagem.jpg [pasta_projeto]
 - **Detecção por tiles**: ideal para placas grandes; botão `Tiles` na aba CALIBRAR
 - **Componentes**: arraste para mover, alças de canto para redimensionar, `GIRAR`,
   `PINAGEM CSV` (conector: pino → pad → família → status)
-- **Testes automatizados**: `pytest tests` (40 testes)
+- **Testes automatizados**: `pytest tests` (46 testes) + lint objetivo no CI
 - **Executável**: `build_exe.ps1` gera `dist\AnotadorPad.exe` com PyInstaller
+  (não depende mais de arquivos fora do repositório)
+  - O EXE não embute o stack de treino (`torch`/`ultralytics`) para ficar leve:
+    pseudo-labels e detecção ONNX funcionam; o fine-tuning LoRA roda no Python
 
 ## Correções da auditoria v11.4
 Auditoria profunda do projeto (estado/visões, armazenamento, interface, detectores)
